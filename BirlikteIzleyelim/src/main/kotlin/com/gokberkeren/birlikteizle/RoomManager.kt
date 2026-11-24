@@ -461,7 +461,7 @@ class RoomManager(
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_SERVER_INPUT = "server_input"
-        private const val PRIVATE_SHORT_CODE = "gokbey"
+        private const val PRIVATE_SHORT_CODE = "gokbey4616"
         private const val HEARTBEAT_MS = 30_000L
         private const val STATE_FALLBACK_MS = 12_000L
         private const val MEMBER_TTL_MS = 180_000L

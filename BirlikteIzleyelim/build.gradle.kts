@@ -1,7 +1,7 @@
 import java.util.Base64
 import java.util.Properties
 
-version = 3
+version = 4
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")

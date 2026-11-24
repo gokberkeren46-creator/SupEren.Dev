@@ -15,6 +15,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -27,10 +28,11 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlin.math.min
 
 /**
- * Modern dark-themed programmatic dialog for Birlikteİzleyelim.
- * Uses pure Android drawables (zero XML) for 100% crash-free .cs3 loading on both Tablet & Android TV.
+ * Compact dark-themed programmatic dialog for Birlikteİzleyelim.
+ * Auto-dismisses once a newly joined room connects (or when a partner joins a newly created room).
  */
 object RoomDialog {
 
@@ -54,10 +56,11 @@ object RoomDialog {
 
     fun show(context: Context, roomManager: RoomManager) {
         val uiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-        val density = context.resources.displayMetrics.density
+        val dm = context.resources.displayMetrics
+        val density = dm.density
         fun dp(v: Int): Int = (v * density).toInt()
 
-        fun cardDrawable(bg: Int = COLOR_CARD, stroke: Int = COLOR_STROKE, radiusDp: Int = 14): GradientDrawable {
+        fun cardDrawable(bg: Int = COLOR_CARD, stroke: Int = COLOR_STROKE, radiusDp: Int = 12): GradientDrawable {
             return GradientDrawable().apply {
                 setColor(bg)
                 cornerRadius = dp(radiusDp).toFloat()
@@ -65,7 +68,7 @@ object RoomDialog {
             }
         }
 
-        fun focusableButtonDrawable(normalColor: Int, focusedColor: Int, radiusDp: Int = 12): StateListDrawable {
+        fun focusableButtonDrawable(normalColor: Int, focusedColor: Int, radiusDp: Int = 10): StateListDrawable {
             val normal = GradientDrawable().apply {
                 setColor(normalColor)
                 cornerRadius = dp(radiusDp).toFloat()
@@ -83,10 +86,10 @@ object RoomDialog {
         }
 
         fun focusableInputDrawable(): StateListDrawable {
-            val normal = cardDrawable(COLOR_INPUT, COLOR_STROKE, 10)
+            val normal = cardDrawable(COLOR_INPUT, COLOR_STROKE, 8)
             val focused = GradientDrawable().apply {
                 setColor(COLOR_INPUT)
-                cornerRadius = dp(10).toFloat()
+                cornerRadius = dp(8).toFloat()
                 setStroke(dp(2), COLOR_PRIMARY_FOCUS)
             }
             return StateListDrawable().apply {
@@ -99,28 +102,28 @@ object RoomDialog {
             return Button(context).apply {
                 text = label
                 isAllCaps = false
-                textSize = 14f
+                textSize = 13f
                 setTextColor(Color.WHITE)
                 setTypeface(typeface, Typeface.BOLD)
                 background = focusableButtonDrawable(normalColor, focusedColor)
-                setPadding(dp(16), dp(12), dp(16), dp(12))
-                minHeight = dp(44)
-                minimumHeight = dp(44)
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                minHeight = dp(36)
+                minimumHeight = dp(36)
                 isFocusable = true
             }
         }
 
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
-            background = cardDrawable(COLOR_BG, COLOR_STROKE, 18)
-            setPadding(dp(20), dp(18), dp(20), dp(18))
+            background = cardDrawable(COLOR_BG, COLOR_STROKE, 16)
+            setPadding(dp(14), dp(12), dp(14), dp(12))
         }
 
         // --- Header row ---
         val headerRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(12))
+            setPadding(0, 0, 0, dp(8))
         }
         val titleCol = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -128,13 +131,13 @@ object RoomDialog {
         }
         val titleView = TextView(context).apply {
             text = "Birlikteİzleyelim"
-            textSize = 20f
+            textSize = 17f
             setTextColor(COLOR_TEXT_PRIMARY)
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitleView = TextView(context).apply {
-            text = "GokBey-Develop • Watch Party"
-            textSize = 11f
+            text = "GokBey-Develop"
+            textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
         }
         titleCol.addView(titleView)
@@ -143,12 +146,12 @@ object RoomDialog {
         val statusPill = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(10), dp(5), dp(10), dp(5))
-            background = cardDrawable(COLOR_CARD, COLOR_STROKE, 20)
+            setPadding(dp(8), dp(4), dp(8), dp(4))
+            background = cardDrawable(COLOR_CARD, COLOR_STROKE, 16)
         }
         val statusDot = View(context).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-                marginEnd = dp(6)
+            layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                marginEnd = dp(5)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -157,7 +160,7 @@ object RoomDialog {
         }
         val statusText = TextView(context).apply {
             text = "Oda Yok"
-            textSize = 12f
+            textSize = 11f
             setTextColor(COLOR_TEXT_PRIMARY)
             setTypeface(typeface, Typeface.BOLD)
         }
@@ -171,53 +174,53 @@ object RoomDialog {
         val profileCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
-            setPadding(dp(14), dp(12), dp(14), dp(12))
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(12)
+                bottomMargin = dp(8)
             }
         }
         val nameLabel = TextView(context).apply {
-            text = "GÖRÜNECEK ADINIZ"
-            textSize = 11f
+            text = "ADINIZ"
+            textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, 0, 0, dp(6))
+            setPadding(0, 0, 0, dp(4))
         }
         val nameInput = EditText(context).apply {
             setText(roomManager.displayName)
-            hint = "Takma adınız"
+            hint = "Takma ad"
             setHintTextColor(COLOR_TEXT_SECONDARY)
             setTextColor(COLOR_TEXT_PRIMARY)
-            textSize = 15f
+            textSize = 13f
             setSingleLine(true)
             filters = arrayOf(InputFilter.LengthFilter(24))
             background = focusableInputDrawable()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(10), dp(7), dp(10), dp(7))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(10)
+                bottomMargin = dp(8)
             }
         }
 
         val serverHeaderRow = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, dp(6))
+            setPadding(0, 0, 0, dp(4))
         }
         val serverLabel = TextView(context).apply {
-            text = "SUNUCU ADRESİ / KISA KOD"
-            textSize = 11f
+            text = "SUNUCU / KISA KOD"
+            textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setTypeface(typeface, Typeface.BOLD)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
         val serverBadge = TextView(context).apply {
-            textSize = 11f
+            textSize = 10f
             setTypeface(typeface, Typeface.BOLD)
         }
         serverHeaderRow.addView(serverLabel)
@@ -228,25 +231,25 @@ object RoomDialog {
             hint = "https://...firebasedatabase.app"
             setHintTextColor(COLOR_TEXT_SECONDARY)
             setTextColor(COLOR_TEXT_PRIMARY)
-            textSize = 13f
+            textSize = 12f
             setSingleLine(true)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             background = focusableInputDrawable()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(10), dp(7), dp(10), dp(7))
         }
 
         fun refreshServerBadge() {
             when {
                 roomManager.isUsingPrivateShortCode() -> {
-                    serverBadge.text = "● Özel Sunucu Aktif"
+                    serverBadge.text = "● Özel Sunucu"
                     serverBadge.setTextColor(COLOR_ONLINE)
                 }
                 roomManager.isServerConfigured() -> {
-                    serverBadge.text = "● Firebase Hazır"
+                    serverBadge.text = "● Hazır"
                     serverBadge.setTextColor(COLOR_SECONDARY_FOCUS)
                 }
                 else -> {
-                    serverBadge.text = "● Sunucu Gerekli"
+                    serverBadge.text = "● Gerekli"
                     serverBadge.setTextColor(COLOR_CONNECTING)
                 }
             }
@@ -268,16 +271,16 @@ object RoomDialog {
         profileCard.addView(serverInput)
 
         val errorText = TextView(context).apply {
-            textSize = 13f
+            textSize = 12f
             setTextColor(0xFFFCA5A5.toInt())
             visibility = View.GONE
-            background = cardDrawable(0x33EF4444, 0x88EF4444.toInt(), 10)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
+            background = cardDrawable(0x33EF4444, 0x88EF4444.toInt(), 8)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(12)
+                bottomMargin = dp(8)
             }
         }
 
@@ -285,23 +288,15 @@ object RoomDialog {
         val noRoomBox = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
-            setPadding(dp(14), dp(14), dp(14), dp(14))
+            setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         val createBtn = styledButton("Yeni Oda Oluştur", COLOR_PRIMARY, COLOR_PRIMARY_FOCUS).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(14)
+                bottomMargin = dp(10)
             }
-        }
-        val dividerLabel = TextView(context).apply {
-            text = "VEYA MEVCUT ODAYA KATIL"
-            textSize = 11f
-            setTextColor(COLOR_TEXT_SECONDARY)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
-            setPadding(0, 0, 0, dp(8))
         }
         val codeInput = EditText(context).apply {
             hint = "6 Haneli Oda Kodu"
@@ -310,16 +305,16 @@ object RoomDialog {
             inputType = InputType.TYPE_CLASS_NUMBER
             filters = arrayOf(InputFilter.LengthFilter(6))
             gravity = Gravity.CENTER
-            textSize = 20f
-            letterSpacing = 0.25f
+            textSize = 17f
+            letterSpacing = 0.22f
             setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
             background = focusableInputDrawable()
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setPadding(dp(10), dp(7), dp(10), dp(7))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(10)
+                bottomMargin = dp(8)
             }
         }
         val joinBtn = styledButton("Odaya Katıl", COLOR_SECONDARY, COLOR_SECONDARY_FOCUS).apply {
@@ -329,7 +324,6 @@ object RoomDialog {
             )
         }
         noRoomBox.addView(createBtn)
-        noRoomBox.addView(dividerLabel)
         noRoomBox.addView(codeInput)
         noRoomBox.addView(joinBtn)
 
@@ -338,45 +332,37 @@ object RoomDialog {
             orientation = LinearLayout.VERTICAL
             visibility = View.GONE
             background = cardDrawable()
-            setPadding(dp(14), dp(14), dp(14), dp(14))
-        }
-        val codeHeader = TextView(context).apply {
-            text = "ODA KODU"
-            textSize = 11f
-            setTextColor(COLOR_TEXT_SECONDARY)
-            setTypeface(typeface, Typeface.BOLD)
-            gravity = Gravity.CENTER
+            setPadding(dp(10), dp(10), dp(10), dp(10))
         }
         val codeBanner = TextView(context).apply {
-            textSize = 30f
-            letterSpacing = 0.3f
+            textSize = 24f
+            letterSpacing = 0.28f
             setTextColor(COLOR_TEXT_PRIMARY)
             setTypeface(Typeface.MONOSPACE, Typeface.BOLD)
             gravity = Gravity.CENTER
-            background = cardDrawable(COLOR_INPUT, COLOR_PRIMARY, 12)
-            setPadding(dp(12), dp(10), dp(12), dp(10))
+            background = cardDrawable(COLOR_INPUT, COLOR_PRIMARY, 10)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(6)
-                bottomMargin = dp(10)
+                bottomMargin = dp(8)
             }
         }
-        val copyBtn = styledButton("Oda Kodunu Kopyala", COLOR_PRIMARY, COLOR_PRIMARY_FOCUS).apply {
+        val copyBtn = styledButton("Kodu Kopyala", COLOR_PRIMARY, COLOR_PRIMARY_FOCUS).apply {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(14)
+                bottomMargin = dp(8)
             }
         }
         val membersHeader = TextView(context).apply {
             text = "ODADAKİLER"
-            textSize = 11f
+            textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setTypeface(typeface, Typeface.BOLD)
-            setPadding(0, 0, 0, dp(6))
+            setPadding(0, 0, 0, dp(4))
         }
         val membersContainer = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -384,7 +370,7 @@ object RoomDialog {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                bottomMargin = dp(14)
+                bottomMargin = dp(8)
             }
         }
         val leaveBtn = styledButton("Odadan Ayrıl", COLOR_DANGER, COLOR_DANGER_FOCUS).apply {
@@ -393,7 +379,6 @@ object RoomDialog {
                 LinearLayout.LayoutParams.WRAP_CONTENT
             )
         }
-        inRoomBox.addView(codeHeader)
         inRoomBox.addView(codeBanner)
         inRoomBox.addView(copyBtn)
         inRoomBox.addView(membersHeader)
@@ -405,7 +390,7 @@ object RoomDialog {
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
             ).apply {
-                topMargin = dp(12)
+                topMargin = dp(8)
             }
         }
 
@@ -425,6 +410,7 @@ object RoomDialog {
         dialog.window?.setBackgroundDrawable(ColorDrawable(Color.TRANSPARENT))
 
         var collectJob: Job? = null
+        var autoCloseMode = AutoCloseMode.NONE
 
         fun setBusy(busy: Boolean) {
             createBtn.isEnabled = !busy
@@ -457,18 +443,18 @@ object RoomDialog {
                 val chip = LinearLayout(context).apply {
                     orientation = LinearLayout.HORIZONTAL
                     gravity = Gravity.CENTER_VERTICAL
-                    background = cardDrawable(COLOR_INPUT, COLOR_STROKE, 10)
-                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                    background = cardDrawable(COLOR_INPUT, COLOR_STROKE, 8)
+                    setPadding(dp(10), dp(5), dp(10), dp(5))
                     layoutParams = LinearLayout.LayoutParams(
                         LinearLayout.LayoutParams.MATCH_PARENT,
                         LinearLayout.LayoutParams.WRAP_CONTENT
                     ).apply {
-                        bottomMargin = dp(6)
+                        bottomMargin = dp(4)
                     }
                 }
                 val dot = View(context).apply {
-                    layoutParams = LinearLayout.LayoutParams(dp(8), dp(8)).apply {
-                        marginEnd = dp(8)
+                    layoutParams = LinearLayout.LayoutParams(dp(7), dp(7)).apply {
+                        marginEnd = dp(6)
                     }
                     background = GradientDrawable().apply {
                         shape = GradientDrawable.OVAL
@@ -477,7 +463,7 @@ object RoomDialog {
                 }
                 val label = TextView(context).apply {
                     text = if (member.clientId == roomManager.clientId) "${member.name} (Sen)" else member.name
-                    textSize = 14f
+                    textSize = 12f
                     setTextColor(COLOR_TEXT_PRIMARY)
                 }
                 chip.addView(dot)
@@ -495,6 +481,10 @@ object RoomDialog {
             uiScope.launch {
                 val res = roomManager.createRoom()
                 setBusy(false)
+                res.onSuccess {
+                    // Keep dialog open until the other device joins, then auto-close
+                    autoCloseMode = AutoCloseMode.ON_PARTNER_JOIN
+                }
                 res.onFailure { showError(it.message ?: "Oda oluşturulamadı") }
             }
         }
@@ -509,6 +499,10 @@ object RoomDialog {
             uiScope.launch {
                 val res = roomManager.joinRoom(code)
                 setBusy(false)
+                res.onSuccess {
+                    // Auto-close as soon as SSE connects
+                    autoCloseMode = AutoCloseMode.ON_CONNECT
+                }
                 res.onFailure { showError(it.message ?: "Odaya katılınamadı") }
             }
         }
@@ -521,6 +515,7 @@ object RoomDialog {
         }
 
         leaveBtn.setOnClickListener {
+            autoCloseMode = AutoCloseMode.NONE
             roomManager.leaveRoom()
         }
 
@@ -561,10 +556,29 @@ object RoomDialog {
                     serverInput.isEnabled = false
                     codeBanner.text = state.roomCode
                     renderMembers(state.members)
+
+                    if (state.connected && autoCloseMode == AutoCloseMode.ON_CONNECT) {
+                        autoCloseMode = AutoCloseMode.NONE
+                        Toast.makeText(context, "Odaya bağlanıldı: ${state.roomCode}", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                    } else if (state.connected && autoCloseMode == AutoCloseMode.ON_PARTNER_JOIN && state.members.size >= 2) {
+                        autoCloseMode = AutoCloseMode.NONE
+                        Toast.makeText(context, "Eşleşme tamamlandı! (${state.roomCode})", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
+                    }
                 }
             }
         }
 
         dialog.show()
+        // Keep popup compact on both Tablet & TV screens
+        val targetWidth = min(dp(330), (dm.widthPixels * 0.80f).toInt())
+        dialog.window?.setLayout(targetWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+    }
+
+    private enum class AutoCloseMode {
+        NONE,
+        ON_CONNECT,
+        ON_PARTNER_JOIN
     }
 }

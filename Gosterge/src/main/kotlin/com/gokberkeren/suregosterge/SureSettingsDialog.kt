@@ -17,7 +17,7 @@ import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * Compact dark-themed settings dialog for SureGosterge (zero XML, TV D-Pad friendly).
+ * Compact dark-themed settings dialog for Gösterge (zero XML, TV D-Pad friendly).
  */
 object SureSettingsDialog {
 
@@ -66,16 +66,16 @@ object SureSettingsDialog {
             return Button(context).apply {
                 text = label
                 isAllCaps = false
-                textSize = 12f
+                textSize = 11f
                 setTextColor(Color.WHITE)
                 setTypeface(typeface, Typeface.BOLD)
-                setPadding(dp(8), dp(6), dp(8), dp(6))
+                setPadding(dp(4), dp(6), dp(4), dp(6))
                 minHeight = dp(34)
                 minimumHeight = dp(34)
                 isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                    marginStart = dp(3)
-                    marginEnd = dp(3)
+                    marginStart = dp(2)
+                    marginEnd = dp(2)
                 }
             }
         }
@@ -87,13 +87,13 @@ object SureSettingsDialog {
         }
 
         val title = TextView(context).apply {
-            text = "Süre Gösterge"
+            text = "Gösterge"
             textSize = 17f
             setTextColor(COLOR_TEXT_PRIMARY)
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitle = TextView(context).apply {
-            text = "SupEren.Dev • Hıza Göre Kalan Süre & Bitiş Saati"
+            text = "SupEren.Dev • İlk 3 dk + Her 10 dk'da 30 sn"
             textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setPadding(0, 0, 0, dp(10))
@@ -131,7 +131,7 @@ object SureSettingsDialog {
             onChanged()
         }
 
-        // Size section
+        // Size section (4 options including Çok Küçük for TV)
         val sizeCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -155,6 +155,7 @@ object SureSettingsDialog {
             gravity = Gravity.CENTER
         }
         val sizeOptions = listOf(
+            "Çok Küçük" to SurePrefs.SIZE_XS,
             "Küçük" to SurePrefs.SIZE_SMALL,
             "Orta" to SurePrefs.SIZE_MEDIUM,
             "Büyük" to SurePrefs.SIZE_LARGE
@@ -162,7 +163,7 @@ object SureSettingsDialog {
         val sizeBtns = sizeOptions.map { (lbl, _) -> chipButton(lbl) }
         fun refreshSizes() {
             sizeBtns.forEachIndexed { idx, btn ->
-                val selected = abs(prefs.textSizeSp - sizeOptions[idx].second) < 0.5f
+                val selected = abs(prefs.textSizeSp - sizeOptions[idx].second) < 0.6f
                 btn.background = if (selected) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS)
                 else focusableBtn(COLOR_MUTED, COLOR_MUTED_FOCUS)
             }
@@ -179,7 +180,7 @@ object SureSettingsDialog {
         sizeCard.addView(sizeLabel)
         sizeCard.addView(sizeRow)
 
-        // Alpha section
+        // Alpha section (%10, %20, %40, %65)
         val alphaCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -203,14 +204,15 @@ object SureSettingsDialog {
             gravity = Gravity.CENTER
         }
         val alphaOptions = listOf(
-            "%40" to SurePrefs.ALPHA_LOW,
-            "%68" to SurePrefs.ALPHA_MEDIUM,
-            "%92" to SurePrefs.ALPHA_HIGH
+            "%10" to SurePrefs.ALPHA_10,
+            "%20" to SurePrefs.ALPHA_20,
+            "%40" to SurePrefs.ALPHA_40,
+            "%65" to SurePrefs.ALPHA_65
         )
         val alphaBtns = alphaOptions.map { (lbl, _) -> chipButton(lbl) }
         fun refreshAlphas() {
             alphaBtns.forEachIndexed { idx, btn ->
-                val selected = abs(prefs.alpha - alphaOptions[idx].second) < 0.08f
+                val selected = abs(prefs.alpha - alphaOptions[idx].second) < 0.05f
                 btn.background = if (selected) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS)
                 else focusableBtn(COLOR_MUTED, COLOR_MUTED_FOCUS)
             }
@@ -252,7 +254,7 @@ object SureSettingsDialog {
         closeBtn.setOnClickListener { dialog.dismiss() }
         dialog.show()
 
-        val targetWidth = min(dp(320), (dm.widthPixels * 0.78f).toInt())
+        val targetWidth = min(dp(330), (dm.widthPixels * 0.80f).toInt())
         dialog.window?.setLayout(targetWidth, WindowManager.LayoutParams.WRAP_CONTENT)
     }
 }

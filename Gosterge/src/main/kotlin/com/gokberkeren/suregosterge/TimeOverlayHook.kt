@@ -15,6 +15,7 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import com.lagradost.cloudstream3.ui.player.AbstractPlayerFragment
+import com.lagradost.cloudstream3.ui.player.CSPlayerLoading
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,6 +33,7 @@ import java.util.WeakHashMap
 /**
  * Attaches unobtrusive bottom-left (speed-adjusted remaining time) and
  * bottom-right (real wall-clock finish time) pills to CloudStream's active player.
+ * Visible during: first 3 minutes, every 10 minutes for 30 seconds, or whenever paused.
  */
 class TimeOverlayHook(private val prefs: SurePrefs) {
 
@@ -46,6 +48,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
     private var leftLabel: TextView? = null
     private var rightLabel: TextView? = null
     private var updateJob: Job? = null
+    private var isCurrentlyShown: Boolean = false
 
     fun register(application: Application, initialActivity: Activity?) {
         application.registerActivityLifecycleCallbacks(activityCallbacks)
@@ -57,17 +60,22 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
     }
 
     fun refreshStyle() {
-        val visible = if (prefs.enabled) View.VISIBLE else View.GONE
-        overlayRoot?.visibility = visible
+        val root = overlayRoot ?: return
+        val ctx = root.context
+        val d = ctx.resources.displayMetrics.density
+        fun dp(v: Int): Int = (v * d).toInt()
+
+        root.visibility = if (prefs.enabled) View.VISIBLE else View.GONE
         val size = prefs.textSizeSp
-        val a = prefs.alpha
-        leftLabel?.apply {
-            textSize = size
-            alpha = a
-        }
-        rightLabel?.apply {
-            textSize = size
-            alpha = a
+        val padH = if (size <= SurePrefs.SIZE_XS + 0.5f) dp(6) else dp(8)
+        val padV = if (size <= SurePrefs.SIZE_XS + 0.5f) dp(2) else dp(3)
+
+        listOfNotNull(leftLabel, rightLabel).forEach { tv ->
+            tv.textSize = size
+            tv.setPadding(padH, padV, padH, padV)
+            if (isCurrentlyShown && prefs.enabled) {
+                tv.alpha = prefs.alpha
+            }
         }
     }
 
@@ -133,17 +141,21 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         val d = ctx.resources.displayMetrics.density
         fun dp(v: Int): Int = (v * d).toInt()
 
+        val size = prefs.textSizeSp
+        val padH = if (size <= SurePrefs.SIZE_XS + 0.5f) dp(6) else dp(8)
+        val padV = if (size <= SurePrefs.SIZE_XS + 0.5f) dp(2) else dp(3)
+
         fun makePill(): TextView {
             return TextView(ctx).apply {
                 setTextColor(Color.WHITE)
-                textSize = prefs.textSizeSp
-                alpha = prefs.alpha
+                textSize = size
+                alpha = 0f
                 setTypeface(typeface, Typeface.BOLD)
-                setShadowLayer(4f, 0f, 1f, 0xCC000000.toInt())
-                setPadding(dp(9), dp(4), dp(9), dp(4))
+                setShadowLayer(3f, 0f, 1f, 0xCC000000.toInt())
+                setPadding(padH, padV, padH, padV)
                 background = GradientDrawable().apply {
                     setColor(0x88121622.toInt())
-                    cornerRadius = dp(10).toFloat()
+                    cornerRadius = dp(8).toFloat()
                     setStroke(dp(1), 0x33FFFFFF)
                 }
                 isClickable = false
@@ -172,8 +184,8 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.START
             ).apply {
-                marginStart = dp(14)
-                bottomMargin = dp(10)
+                marginStart = dp(12)
+                bottomMargin = dp(8)
             }
         )
 
@@ -184,8 +196,8 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.END
             ).apply {
-                marginEnd = dp(14)
-                bottomMargin = dp(10)
+                marginEnd = dp(12)
+                bottomMargin = dp(8)
             }
         )
 
@@ -194,6 +206,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         overlayRoot = root
         leftLabel = left
         rightLabel = right
+        isCurrentlyShown = false
 
         updateJob = scope.launch {
             while (isActive) {
@@ -212,34 +225,53 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
 
         val player = fragment.player
         val duration = player.getDuration() ?: 0L
-        val position = player.getPosition() ?: 0L
+        val position = (player.getPosition() ?: 0L).coerceAtLeast(0L)
 
         // Hide on live streams or before media duration is known
         if (duration <= 0L || duration > MAX_VOD_DURATION_MS) {
-            leftLabel?.visibility = View.GONE
-            rightLabel?.visibility = View.GONE
+            setLabelsShown(false)
             return
         }
 
-        val remainingRawMs = (duration - position).coerceAtLeast(0L)
-        val speed = player.getPlaybackSpeed().coerceIn(0.25f, 4.0f)
-        val realRemainingMs = (remainingRawMs / speed).toLong()
+        val isPaused = fragment.currentPlayerStatus == CSPlayerLoading.IsPaused
+        val inInitialWindow = position < INITIAL_SHOW_MS
+        val inPeriodicWindow = (position % PERIODIC_INTERVAL_MS) < PERIODIC_SHOW_MS
+        val shouldShow = isPaused || inInitialWindow || inPeriodicWindow
 
-        val finishMs = System.currentTimeMillis() + realRemainingMs
-        val finishClock = clockFormat.format(Date(finishMs))
+        if (shouldShow) {
+            val remainingRawMs = (duration - position).coerceAtLeast(0L)
+            val speed = player.getPlaybackSpeed().coerceIn(0.25f, 4.0f)
+            val realRemainingMs = (remainingRawMs / speed).toLong()
+            val finishClock = clockFormat.format(Date(System.currentTimeMillis() + realRemainingMs))
 
-        leftLabel?.apply {
-            text = formatRemaining(realRemainingMs)
-            visibility = View.VISIBLE
+            leftLabel?.text = formatRemaining(realRemainingMs)
+            rightLabel?.text = "Bitiş $finishClock"
         }
-        rightLabel?.apply {
-            text = "Bitiş $finishClock"
-            visibility = View.VISIBLE
+
+        setLabelsShown(shouldShow)
+    }
+
+    private fun setLabelsShown(show: Boolean) {
+        if (show == isCurrentlyShown) return
+        isCurrentlyShown = show
+        val targetAlpha = if (show) prefs.alpha else 0f
+        listOfNotNull(leftLabel, rightLabel).forEach { tv ->
+            tv.animate().cancel()
+            if (show) {
+                tv.visibility = View.VISIBLE
+                tv.animate().alpha(targetAlpha).setDuration(FADE_MS).start()
+            } else {
+                tv.animate().alpha(0f).setDuration(FADE_MS).withEndAction {
+                    if (!isCurrentlyShown) {
+                        tv.visibility = View.GONE
+                    }
+                }.start()
+            }
         }
     }
 
     private fun formatRemaining(ms: Long): String {
-        val totalMinutes = (ms + 30_000L) / 60_000L // round to nearest minute
+        val totalMinutes = (ms + 30_000L) / 60_000L
         if (totalMinutes <= 0L) return "< 1 dk kaldı"
         val hours = totalMinutes / 60L
         val mins = totalMinutes % 60L
@@ -266,10 +298,15 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         leftLabel = null
         rightLabel = null
         activeFragmentRef = null
+        isCurrentlyShown = false
     }
 
     companion object {
         private const val UPDATE_INTERVAL_MS = 2_000L
+        private const val INITIAL_SHOW_MS = 3L * 60_000L       // İlk 3 dakika
+        private const val PERIODIC_INTERVAL_MS = 10L * 60_000L // Her 10 dakikada bir
+        private const val PERIODIC_SHOW_MS = 30_000L           // 30 saniye görünür
+        private const val FADE_MS = 350L
         private const val MAX_VOD_DURATION_MS = 24L * 60L * 60L * 1000L
     }
 }

@@ -1,7 +1,7 @@
-version = 1
+version = 2
 
 cloudstream {
-    description = "Süre Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati."
+    description = "Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

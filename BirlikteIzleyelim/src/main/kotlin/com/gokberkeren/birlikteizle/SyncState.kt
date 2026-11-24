@@ -55,6 +55,15 @@ data class MediaInfo(
 ) {
     fun uniqueKey(): String = "$url|$apiName|${season ?: -1}|${episode ?: -1}|${episodeId ?: -1}"
 
+    /**
+     * Normalized match key resilient to minor URL differences between ResultFragment and GeneratorPlayer.
+     */
+    fun matchKey(): String {
+        val normApi = apiName.trim().lowercase()
+        val normName = name.trim().lowercase()
+        return "$normApi|$normName|${season ?: -1}|${episode ?: -1}"
+    }
+
     fun displayTitle(): String {
         val base = name.ifBlank { "İçerik" }
         return when {

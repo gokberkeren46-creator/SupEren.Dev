@@ -1,6 +1,7 @@
+import java.util.Base64
 import java.util.Properties
 
-version = 2
+version = 3
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -9,11 +10,17 @@ val localProps = Properties().apply {
     }
 }
 
-val firebaseUrl: String = (
+val privateFirebaseUrl: String = (
     System.getenv("FIREBASE_URL")?.takeIf { it.isNotBlank() }
         ?: localProps.getProperty("firebase.url")?.takeIf { it.isNotBlank() }
-        ?: "https://cloudstream-4616-default-rtdb.europe-west1.firebasedatabase.app/"
+        ?: ""
 ).trim().trimEnd('/')
+
+val privateFirebaseUrlB64: String = if (privateFirebaseUrl.isNotEmpty()) {
+    Base64.getEncoder().encodeToString(privateFirebaseUrl.toByteArray(Charsets.UTF_8))
+} else {
+    ""
+}
 
 cloudstream {
     description = "Birlikteİzleyelim - Sevdiklerinizle senkronize izleyin"
@@ -35,7 +42,7 @@ android {
     namespace = "com.gokberkeren.birlikteizle"
 
     defaultConfig {
-        buildConfigField("String", "FIREBASE_URL", "\"$firebaseUrl\"")
+        buildConfigField("String", "PRIVATE_FIREBASE_URL_B64", "\"$privateFirebaseUrlB64\"")
     }
 
     buildFeatures {

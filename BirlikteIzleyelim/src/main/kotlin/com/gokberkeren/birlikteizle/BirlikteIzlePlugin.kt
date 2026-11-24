@@ -3,6 +3,7 @@ package com.gokberkeren.birlikteizle
 import android.app.Activity
 import android.app.Application
 import android.content.Context
+import android.util.Base64
 import android.util.Log
 import com.lagradost.cloudstream3.plugins.CloudstreamPlugin
 import com.lagradost.cloudstream3.plugins.Plugin
@@ -14,9 +15,9 @@ class BirlikteIzlePlugin : Plugin() {
     private var playerHook: PlayerHook? = null
 
     override fun load(context: Context) {
-        val firebaseUrl = BuildConfig.FIREBASE_URL
-        val firebase = FirebaseClient(firebaseUrl)
-        val manager = RoomManager(context, firebase)
+        val privateUrl = decodePrivateUrl(BuildConfig.PRIVATE_FIREBASE_URL_B64)
+        val firebase = FirebaseClient()
+        val manager = RoomManager(context, firebase, privateUrl)
         val hook = PlayerHook(manager)
 
         roomManager = manager
@@ -38,7 +39,16 @@ class BirlikteIzlePlugin : Plugin() {
         Log.i(TAG, "Birlikteİzleyelim loaded (clientId=${manager.clientId})")
     }
 
+    private fun decodePrivateUrl(b64: String): String {
+        if (b64.isBlank()) return ""
+        return try {
+            String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8).trim().trimEnd('/')
+        } catch (_: Throwable) {
+            ""
+        }
+    }
+
     companion object {
-        private const val TAG = "BirlikteIzle"
+        private const val TAG = "BirlikteIzleyelim"
     }
 }

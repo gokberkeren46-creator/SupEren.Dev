@@ -2,7 +2,6 @@ package com.gokberkeren.birlikteizle
 
 import android.content.Context
 import android.os.Build
-import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -29,7 +28,8 @@ data class RoomUiState(
 
 class RoomManager(
     context: Context,
-    private val firebase: FirebaseClient
+    private val firebase: FirebaseClient,
+    private val privateFirebaseUrl: String
 ) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -53,6 +53,14 @@ class RoomManager(
             }
         }
 
+    var serverInput: String
+        get() = prefs.getString(KEY_SERVER_INPUT, "")?.trim().orEmpty()
+        set(value) {
+            val clean = value.trim()
+            prefs.edit().putString(KEY_SERVER_INPUT, clean).apply()
+            applyServerConfig(clean)
+        }
+
     private val _uiState = MutableStateFlow(RoomUiState())
     val uiState: StateFlow<RoomUiState> = _uiState.asStateFlow()
 
@@ -66,7 +74,7 @@ class RoomManager(
 
     private var lastKnownSeq: Long = 0L
     private var lastAppliedRemoteSeq: Long = -1L
-    private var lastAppliedMediaKey: String? = null
+    private var lastAppliedMediaMatchKey: String? = null
     private var lastAppliedMediaAt: Long = 0L
     private var lastAppliedReactionId: String? = null
 
@@ -74,11 +82,41 @@ class RoomManager(
     var onRemoteMedia: ((MediaInfo, senderName: String) -> Unit)? = null
     var onRemoteReaction: ((EmojiReaction) -> Unit)? = null
 
+    init {
+        applyServerConfig(serverInput)
+    }
+
+    fun isServerConfigured(): Boolean = firebase.isConfigured()
+
+    fun isUsingPrivateShortCode(): Boolean {
+        return serverInput.equals(PRIVATE_SHORT_CODE, ignoreCase = true) && privateFirebaseUrl.isNotBlank()
+    }
+
+    private fun applyServerConfig(input: String) {
+        val clean = input.trim()
+        when {
+            clean.equals(PRIVATE_SHORT_CODE, ignoreCase = true) && privateFirebaseUrl.isNotBlank() -> {
+                firebase.configure(privateFirebaseUrl, prefix = PRIVATE_SHORT_CODE)
+            }
+            clean.startsWith("https://", ignoreCase = true) || clean.startsWith("http://", ignoreCase = true) -> {
+                firebase.configure(clean, prefix = "")
+            }
+            else -> {
+                firebase.configure("", prefix = "")
+            }
+        }
+    }
+
     fun estimatedServerNowMs(): Long = firebase.estimatedServerNowMs()
 
     fun isInRoom(): Boolean = _uiState.value.roomCode != null
 
     suspend fun createRoom(): Result<String> {
+        if (!isServerConfigured()) {
+            return Result.failure(
+                IllegalStateException("Lütfen önce Firebase sunucu adresinizi (https://...) girin.")
+            )
+        }
         leaveRoom()
         repeat(6) {
             val code = Random.nextInt(100_000, 1_000_000).toString()
@@ -114,10 +152,17 @@ class RoomManager(
                 }
             }
         }
-        return Result.failure(IllegalStateException("Oda oluşturulamadı. İnternet veya Firebase kurallarını kontrol edin."))
+        return Result.failure(
+            IllegalStateException("Oda oluşturulamadı. İnternet bağlantısını veya Firebase kurallarını kontrol edin.")
+        )
     }
 
     suspend fun joinRoom(rawCode: String): Result<String> {
+        if (!isServerConfigured()) {
+            return Result.failure(
+                IllegalStateException("Lütfen önce Firebase sunucu adresinizi (https://...) girin.")
+            )
+        }
         val code = rawCode.trim()
         if (!CODE_REGEX.matches(code)) {
             return Result.failure(IllegalArgumentException("Oda kodu 6 haneli sayı olmalıdır."))
@@ -151,7 +196,7 @@ class RoomManager(
             roomJson = JSONObject()
             lastKnownSeq = 0L
             lastAppliedRemoteSeq = -1L
-            lastAppliedMediaKey = null
+            lastAppliedMediaMatchKey = null
             lastAppliedMediaAt = 0L
             lastAppliedReactionId = null
         }
@@ -195,7 +240,8 @@ class RoomManager(
         if (media.url.isBlank() || media.apiName.isBlank()) return
         val outgoing = media.copy(by = clientId)
         synchronized(roomLock) {
-            lastAppliedMediaKey = outgoing.uniqueKey()
+            lastAppliedMediaMatchKey = outgoing.matchKey()
+            lastAppliedMediaAt = firebase.estimatedServerNowMs()
         }
         scope.launch {
             firebase.put("rooms/$code/media", outgoing.toJson(useServerTimestamp = true).toString())
@@ -234,7 +280,7 @@ class RoomManager(
             roomJson = JSONObject()
             lastKnownSeq = 0L
             lastAppliedRemoteSeq = -1L
-            lastAppliedMediaKey = null
+            lastAppliedMediaMatchKey = null
             lastAppliedMediaAt = 0L
             lastAppliedReactionId = null
         }
@@ -312,14 +358,16 @@ class RoomManager(
 
         snap.media?.let { med ->
             var shouldEmit = false
-            val key = med.uniqueKey()
+            val mKey = med.matchKey()
             synchronized(roomLock) {
-                if (med.by.isNotBlank() && med.by != clientId &&
-                    (key != lastAppliedMediaKey || med.updatedAt > lastAppliedMediaAt)
-                ) {
-                    lastAppliedMediaKey = key
-                    lastAppliedMediaAt = med.updatedAt
-                    shouldEmit = true
+                if (med.by.isNotBlank() && med.by != clientId) {
+                    val isDifferentMedia = mKey != lastAppliedMediaMatchKey
+                    val isStrictlyNewer = med.updatedAt > lastAppliedMediaAt + MEDIA_RETRIGGER_MIN_DELTA_MS
+                    if (isDifferentMedia || isStrictlyNewer) {
+                        lastAppliedMediaMatchKey = mKey
+                        lastAppliedMediaAt = max(lastAppliedMediaAt, med.updatedAt)
+                        shouldEmit = true
+                    }
                 }
             }
             if (shouldEmit) {
@@ -409,14 +457,16 @@ class RoomManager(
     }
 
     companion object {
-        private const val TAG = "BirlikteIzleRoom"
         private const val PREFS_NAME = "birlikte_izle_prefs"
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_DISPLAY_NAME = "display_name"
+        private const val KEY_SERVER_INPUT = "server_input"
+        private const val PRIVATE_SHORT_CODE = "gokbey"
         private const val HEARTBEAT_MS = 30_000L
         private const val STATE_FALLBACK_MS = 12_000L
         private const val MEMBER_TTL_MS = 180_000L
         private const val REACTION_MAX_AGE_MS = 15_000L
+        private const val MEDIA_RETRIGGER_MIN_DELTA_MS = 20_000L
         private val CODE_REGEX = Regex("^\\d{6}$")
     }
 }

@@ -9,8 +9,10 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
+import android.text.Editable
 import android.text.InputFilter
 import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -165,7 +167,7 @@ object RoomDialog {
         headerRow.addView(titleCol)
         headerRow.addView(statusPill)
 
-        // --- Profile card ---
+        // --- Profile & Server card ---
         val profileCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -194,9 +196,76 @@ object RoomDialog {
             filters = arrayOf(InputFilter.LengthFilter(24))
             background = focusableInputDrawable()
             setPadding(dp(12), dp(10), dp(12), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = dp(10)
+            }
         }
+
+        val serverHeaderRow = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, 0, 0, dp(6))
+        }
+        val serverLabel = TextView(context).apply {
+            text = "SUNUCU ADRESİ / KISA KOD"
+            textSize = 11f
+            setTextColor(COLOR_TEXT_SECONDARY)
+            setTypeface(typeface, Typeface.BOLD)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+        val serverBadge = TextView(context).apply {
+            textSize = 11f
+            setTypeface(typeface, Typeface.BOLD)
+        }
+        serverHeaderRow.addView(serverLabel)
+        serverHeaderRow.addView(serverBadge)
+
+        val serverInput = EditText(context).apply {
+            setText(roomManager.serverInput)
+            hint = "https://...firebasedatabase.app"
+            setHintTextColor(COLOR_TEXT_SECONDARY)
+            setTextColor(COLOR_TEXT_PRIMARY)
+            textSize = 13f
+            setSingleLine(true)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+            background = focusableInputDrawable()
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+        }
+
+        fun refreshServerBadge() {
+            when {
+                roomManager.isUsingPrivateShortCode() -> {
+                    serverBadge.text = "● Özel Sunucu Aktif"
+                    serverBadge.setTextColor(COLOR_ONLINE)
+                }
+                roomManager.isServerConfigured() -> {
+                    serverBadge.text = "● Firebase Hazır"
+                    serverBadge.setTextColor(COLOR_SECONDARY_FOCUS)
+                }
+                else -> {
+                    serverBadge.text = "● Sunucu Gerekli"
+                    serverBadge.setTextColor(COLOR_CONNECTING)
+                }
+            }
+        }
+
+        serverInput.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) = Unit
+            override fun afterTextChanged(s: Editable?) {
+                roomManager.serverInput = s?.toString().orEmpty()
+                refreshServerBadge()
+            }
+        })
+        refreshServerBadge()
+
         profileCard.addView(nameLabel)
         profileCard.addView(nameInput)
+        profileCard.addView(serverHeaderRow)
+        profileCard.addView(serverInput)
 
         val errorText = TextView(context).apply {
             textSize = 13f
@@ -419,6 +488,8 @@ object RoomDialog {
 
         createBtn.setOnClickListener {
             roomManager.displayName = nameInput.text.toString()
+            roomManager.serverInput = serverInput.text.toString()
+            refreshServerBadge()
             showError(null)
             setBusy(true)
             uiScope.launch {
@@ -430,6 +501,8 @@ object RoomDialog {
 
         joinBtn.setOnClickListener {
             roomManager.displayName = nameInput.text.toString()
+            roomManager.serverInput = serverInput.text.toString()
+            refreshServerBadge()
             val code = codeInput.text.toString().trim()
             showError(null)
             setBusy(true)
@@ -460,6 +533,10 @@ object RoomDialog {
             if (editedName.isNotEmpty() && editedName != roomManager.displayName) {
                 roomManager.displayName = editedName
             }
+            val editedServer = serverInput.text.toString().trim()
+            if (editedServer != roomManager.serverInput) {
+                roomManager.serverInput = editedServer
+            }
             collectJob?.cancel()
         }
 
@@ -470,6 +547,7 @@ object RoomDialog {
                     setDotColor(COLOR_OFFLINE)
                     noRoomBox.visibility = View.VISIBLE
                     inRoomBox.visibility = View.GONE
+                    serverInput.isEnabled = true
                 } else {
                     if (state.connected) {
                         statusText.text = "Bağlı"
@@ -480,6 +558,7 @@ object RoomDialog {
                     }
                     noRoomBox.visibility = View.GONE
                     inRoomBox.visibility = View.VISIBLE
+                    serverInput.isEnabled = false
                     codeBanner.text = state.roomCode
                     renderMembers(state.members)
                 }

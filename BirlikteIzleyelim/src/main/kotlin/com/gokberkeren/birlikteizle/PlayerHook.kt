@@ -37,7 +37,7 @@ import kotlin.math.abs
 
 /**
  * Hooks CloudStream player lifecycle, captures local playback/media events,
- * auto-opens remote media on the same source, and renders live emoji reactions.
+ * auto-opens remote media without ping-pong loops, and renders live emoji reactions.
  */
 class PlayerHook(private val roomManager: RoomManager) {
 
@@ -74,10 +74,16 @@ class PlayerHook(private val roomManager: RoomManager) {
     private var lastVisitedResultApiName: String? = null
 
     @Volatile
-    private var lastPublishedMediaKey: String? = null
+    private var lastPublishedMatchKey: String? = null
 
     @Volatile
-    private var pendingRemoteMediaKey: String? = null
+    private var lastOpenedRemoteMatchKey: String? = null
+
+    @Volatile
+    private var lastRemoteOpenElapsedMs: Long = 0L
+
+    @Volatile
+    private var remoteMediaOpenLockUntilMs: Long = 0L
 
     init {
         roomManager.onRemoteState = { state, senderName ->
@@ -205,7 +211,6 @@ class PlayerHook(private val roomManager: RoomManager) {
         activePlayerFragmentRef = null
         lastObservedPlaying = null
         lastObservedPositionMs = -1L
-        lastPublishedMediaKey = null
     }
 
     private fun detachExoListenerOnly() {
@@ -227,7 +232,6 @@ class PlayerHook(private val roomManager: RoomManager) {
         val exo = resolveExoPlayer(fragment, iPlayer) ?: return false
         if (attachedExoPlayerRef?.get() === exo && attachedExoListener != null) return true
 
-        // Replace listener cleanly if CS3IPlayer recreated its ExoPlayer instance
         detachExoListenerOnly()
 
         return try {
@@ -241,13 +245,11 @@ class PlayerHook(private val roomManager: RoomManager) {
                 arrayOf(listenerClass)
             ) { _, method, args ->
                 when (method.name) {
-                    // Use playWhenReady instead of isPlaying so buffering doesn't trigger false pauses
                     "onPlayWhenReadyChanged" -> {
                         val playWhenReady = (args?.getOrNull(0) as? Boolean) ?: return@newProxyInstance null
                         onLocalPlayingChanged(playWhenReady)
                     }
                     "onPositionDiscontinuity" -> {
-                        // onPositionDiscontinuity(PositionInfo old, PositionInfo new, int reason)
                         val reason = args?.getOrNull(2) as? Int
                         if (reason == DISCONTINUITY_REASON_SEEK) {
                             onLocalSeekDetected()
@@ -293,20 +295,18 @@ class PlayerHook(private val roomManager: RoomManager) {
 
     private fun startMonitorLoop(fragment: AbstractPlayerFragment<*>, iPlayer: IPlayer) {
         monitorJob = scope.launch {
-            var lastMetaAttemptTick = 0
+            var metaAttempted = false
             while (isActive) {
                 delay(MONITOR_INTERVAL_MS)
                 emojiOverlay.updateVisibility()
 
-                // Re-attach if CS3IPlayer created a new ExoPlayer instance (e.g., mirror/episode switch)
                 val currentExo = resolveExoPlayer(fragment, iPlayer)
                 if (currentExo != null && currentExo !== attachedExoPlayerRef?.get()) {
                     tryAttachExoListener(fragment, iPlayer)
                 }
 
-                if (lastPublishedMediaKey == null && lastMetaAttemptTick < 6) {
-                    lastMetaAttemptTick++
-                    publishCurrentMediaIfNeeded(fragment)
+                if (!metaAttempted) {
+                    metaAttempted = publishCurrentMediaIfNeeded(fragment)
                 }
 
                 if (!roomManager.isInRoom()) continue
@@ -324,7 +324,6 @@ class PlayerHook(private val roomManager: RoomManager) {
                 lastObservedPlaying = currentPlaying
                 lastObservedPositionMs = currentPos
 
-                // Only use polling for play/pause if Media3 reflection listener is unavailable
                 val hasExoListener = attachedExoPlayerRef?.get() != null && attachedExoListener != null
                 if (!hasExoListener && prevPlaying != null && prevPlaying != currentPlaying) {
                     publishLocalState(currentPlaying, currentPos)
@@ -335,7 +334,6 @@ class PlayerHook(private val roomManager: RoomManager) {
                     continue
                 }
 
-                // Periodic drift check against the latest room state (local OR remote)
                 val sync = latestSyncState ?: continue
                 if (sync.playing && currentPlaying && sync.updatedAt > 0L) {
                     val elapsed = (roomManager.estimatedServerNowMs() - sync.updatedAt).coerceAtLeast(0L)
@@ -354,7 +352,6 @@ class PlayerHook(private val roomManager: RoomManager) {
     private fun publishLocalState(playing: Boolean, positionMs: Long) {
         lastObservedPlaying = playing
         lastObservedPositionMs = positionMs
-        // Update latestSyncState immediately so the drift loop never pulls us back to stale remote time
         roomManager.publishState(playing, positionMs)?.let {
             latestSyncState = it
         }
@@ -406,20 +403,24 @@ class PlayerHook(private val roomManager: RoomManager) {
         }
     }
 
-    private fun publishCurrentMediaIfNeeded(fragment: AbstractPlayerFragment<*>) {
-        if (!roomManager.isInRoom()) return
-        if (fragment !is GeneratorPlayer) return
-        val episode = extractResultEpisode(fragment) ?: return
+    /**
+     * Publishes currently opened media to the room once, strictly guarded against echo/ping-pong loops.
+     * Returns true once handled (or intentionally skipped) so the monitor loop won't retry endlessly.
+     */
+    private fun publishCurrentMediaIfNeeded(fragment: AbstractPlayerFragment<*>): Boolean {
+        if (!roomManager.isInRoom()) return false
+        if (fragment !is GeneratorPlayer) return true
+        val episode = extractResultEpisode(fragment) ?: return false
 
-        val url = when {
-            lastVisitedResultApiName == episode.apiName && !lastVisitedResultUrl.isNullOrBlank() ->
-                lastVisitedResultUrl!!
-            episode.data.startsWith("http", ignoreCase = true) -> episode.data
-            else -> return
+        // Require the real ResultFragment page URL so the remote device's loadResult() always succeeds cleanly
+        val pageUrl = if (lastVisitedResultApiName == episode.apiName && !lastVisitedResultUrl.isNullOrBlank()) {
+            lastVisitedResultUrl!!
+        } else {
+            return false
         }
 
         val media = MediaInfo(
-            url = url,
+            url = pageUrl,
             apiName = episode.apiName,
             name = episode.headerName?.takeIf { it.isNotBlank() } ?: episode.name.orEmpty(),
             season = episode.season,
@@ -427,15 +428,20 @@ class PlayerHook(private val roomManager: RoomManager) {
             episodeId = episode.id,
             by = roomManager.clientId
         )
-        val key = media.uniqueKey()
-        if (key == pendingRemoteMediaKey) {
-            pendingRemoteMediaKey = null
-            lastPublishedMediaKey = key
-            return
+        val mKey = media.matchKey()
+
+        // Never echo back if we are currently opening a remote media item
+        if (SystemClock.elapsedRealtime() < remoteMediaOpenLockUntilMs) {
+            lastPublishedMatchKey = mKey
+            return true
         }
-        if (key == lastPublishedMediaKey) return
-        lastPublishedMediaKey = key
+        if (mKey == lastOpenedRemoteMatchKey || mKey == lastPublishedMatchKey) {
+            return true
+        }
+
+        lastPublishedMatchKey = mKey
         roomManager.publishMedia(media)
+        return true
     }
 
     private fun extractResultEpisode(player: GeneratorPlayer): ResultEpisode? {
@@ -459,14 +465,42 @@ class PlayerHook(private val roomManager: RoomManager) {
 
     private fun openRemoteMediaAutomatically(media: MediaInfo, senderName: String) {
         val activity = currentActivity() ?: return
-        val activeKey = activePlayerFragmentRef?.get()?.let { frag ->
-            if (frag is GeneratorPlayer) extractResultEpisode(frag)?.let { ep ->
-                "${lastVisitedResultUrl ?: ep.data}|${ep.apiName}|${ep.season ?: -1}|${ep.episode ?: -1}|${ep.id}"
+        val incomingMatchKey = media.matchKey()
+        val nowElapsed = SystemClock.elapsedRealtime()
+
+        // Guard 1: Don't re-trigger the exact same media within cooldown (prevents source-search restart loop)
+        if (incomingMatchKey == lastOpenedRemoteMatchKey &&
+            (nowElapsed - lastRemoteOpenElapsedMs) < REMOTE_MEDIA_LOCK_MS
+        ) {
+            return
+        }
+
+        // Guard 2: Don't re-open if we are already playing/loading this exact title + episode
+        val activeMatchKey = activePlayerFragmentRef?.get()?.let { frag ->
+            if (frag is GeneratorPlayer) {
+                extractResultEpisode(frag)?.let { ep ->
+                    MediaInfo(
+                        url = media.url,
+                        apiName = ep.apiName,
+                        name = ep.headerName?.takeIf { it.isNotBlank() } ?: ep.name.orEmpty(),
+                        season = ep.season,
+                        episode = ep.episode
+                    ).matchKey()
+                }
             } else null
         }
-        if (activeKey == media.uniqueKey()) return
+        if (activeMatchKey == incomingMatchKey) {
+            lastOpenedRemoteMatchKey = incomingMatchKey
+            lastRemoteOpenElapsedMs = nowElapsed
+            return
+        }
 
-        pendingRemoteMediaKey = media.uniqueKey()
+        // Lock outgoing media publication for 15s so opening this media cannot ping-pong back to sender
+        remoteMediaOpenLockUntilMs = nowElapsed + REMOTE_MEDIA_LOCK_MS
+        lastOpenedRemoteMatchKey = incomingMatchKey
+        lastRemoteOpenElapsedMs = nowElapsed
+        lastPublishedMatchKey = incomingMatchKey
+
         showToast("$senderName açtı: ${media.displayTitle()}")
 
         val startAction = if (media.episodeId != null) START_ACTION_LOAD_EP else START_ACTION_RESUME_LATEST
@@ -545,6 +579,7 @@ class PlayerHook(private val roomManager: RoomManager) {
         private const val START_ACTION_RESUME_LATEST = 1
         private const val START_ACTION_LOAD_EP = 2
         private const val SUPPRESS_WINDOW_MS = 1_200L
+        private const val REMOTE_MEDIA_LOCK_MS = 15_000L
         private const val MONITOR_INTERVAL_MS = 1_500L
         private const val DRIFT_THRESHOLD_MS = 2_000L
         private const val LOCAL_JUMP_THRESHOLD_MS = 3_500L

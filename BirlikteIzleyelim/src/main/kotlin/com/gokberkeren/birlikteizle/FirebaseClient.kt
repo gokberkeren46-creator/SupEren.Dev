@@ -27,10 +27,16 @@ import kotlin.math.min
 
 /**
  * Lightweight Firebase Realtime Database REST + Server-Sent Events (SSE) client.
+ * Supports runtime server configuration and optional root path prefix for private rules.
  */
-class FirebaseClient(rawBaseUrl: String) {
+class FirebaseClient {
 
-    private val baseUrl = rawBaseUrl.trim().trimEnd('/')
+    @Volatile
+    private var baseUrl: String = ""
+
+    @Volatile
+    private var rootPrefix: String = ""
+
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
     private val restClient = OkHttpClient.Builder()
@@ -50,14 +56,23 @@ class FirebaseClient(rawBaseUrl: String) {
     var serverClockOffsetMs: Long = 0L
         private set
 
+    fun configure(url: String, prefix: String = "") {
+        baseUrl = url.trim().trimEnd('/')
+        rootPrefix = prefix.trim().trim('/')
+    }
+
+    fun isConfigured(): Boolean = baseUrl.startsWith("https://") || baseUrl.startsWith("http://")
+
     fun estimatedServerNowMs(): Long = System.currentTimeMillis() + serverClockOffsetMs
 
     private fun buildUrl(path: String): String {
         val clean = path.trimStart('/').removeSuffix(".json")
-        return "$baseUrl/$clean.json"
+        val fullPath = if (rootPrefix.isNotEmpty()) "$rootPrefix/$clean" else clean
+        return "$baseUrl/$fullPath.json"
     }
 
     suspend fun get(path: String): String? = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext null
         val req = Request.Builder()
             .url(buildUrl(path))
             .get()
@@ -83,6 +98,7 @@ class FirebaseClient(rawBaseUrl: String) {
     suspend fun patch(path: String, json: String): Boolean = executeWrite("PATCH", path, json)
 
     suspend fun delete(path: String): Boolean = withContext(Dispatchers.IO) {
+        if (!isConfigured()) return@withContext false
         val req = Request.Builder()
             .url(buildUrl(path))
             .delete()
@@ -100,6 +116,7 @@ class FirebaseClient(rawBaseUrl: String) {
 
     private suspend fun executeWrite(method: String, path: String, json: String): Boolean =
         withContext(Dispatchers.IO) {
+            if (!isConfigured()) return@withContext false
             val body = json.toRequestBody(jsonMediaType)
             val req = Request.Builder()
                 .url(buildUrl(path))
@@ -131,6 +148,11 @@ class FirebaseClient(rawBaseUrl: String) {
         val job: Job = scope.launch(Dispatchers.IO) {
             var backoffMs = 1000L
             while (isActive && !closed.get()) {
+                if (!isConfigured()) {
+                    onConnectionChanged(false)
+                    delay(2000L)
+                    continue
+                }
                 val url = buildUrl("rooms/$code")
                 val req = Request.Builder()
                     .url(url)
@@ -168,7 +190,7 @@ class FirebaseClient(rawBaseUrl: String) {
                 if (!closed.get() && isActive) {
                     onConnectionChanged(false)
                     delay(backoffMs)
-                    backoffMs = min(backoffMs * 2, 15_000L)
+                    backoffMs = min(backoffMs * 2, 10_000L)
                 }
             }
         }

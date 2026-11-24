@@ -10,7 +10,10 @@ data class PlaybackState(
     val position: Long = 0L,
     val updatedAt: Long = 0L,
     val by: String = "",
-    val seq: Long = 0L
+    val seq: Long = 0L,
+    val speed: Float = 1.0f,
+    val sourceName: String = "",
+    val explicitSeek: Boolean = false
 ) {
     fun toJson(useServerTimestamp: Boolean = true): JSONObject {
         return JSONObject().apply {
@@ -23,18 +26,26 @@ data class PlaybackState(
             }
             put("by", by)
             put("seq", seq)
+            put("speed", speed.toDouble())
+            put("sourceName", sourceName)
+            put("explicitSeek", explicitSeek)
         }
     }
 
     companion object {
         fun fromJson(obj: JSONObject?): PlaybackState? {
             if (obj == null) return null
+            val rawSpeed = obj.optDouble("speed", 1.0).toFloat()
+            val safeSpeed = if (rawSpeed.isNaN() || rawSpeed < 0.25f || rawSpeed > 4.0f) 1.0f else rawSpeed
             return PlaybackState(
                 playing = obj.optBoolean("playing", false),
                 position = obj.optLong("position", 0L),
                 updatedAt = obj.optLong("updatedAt", 0L),
                 by = obj.optString("by", ""),
-                seq = obj.optLong("seq", 0L)
+                seq = obj.optLong("seq", 0L),
+                speed = safeSpeed,
+                sourceName = obj.optString("sourceName", ""),
+                explicitSeek = obj.optBoolean("explicitSeek", false)
             )
         }
     }

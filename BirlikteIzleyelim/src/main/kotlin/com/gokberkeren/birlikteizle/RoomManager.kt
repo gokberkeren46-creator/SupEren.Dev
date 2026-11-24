@@ -209,9 +209,16 @@ class RoomManager(
         }
     }
 
-    fun publishState(playing: Boolean, positionMs: Long): PlaybackState? {
+    fun publishState(
+        playing: Boolean,
+        positionMs: Long,
+        speed: Float = 1.0f,
+        sourceName: String = "",
+        explicitSeek: Boolean = false
+    ): PlaybackState? {
         val code = currentRoomCode ?: return null
         val clampedPos = positionMs.coerceAtLeast(0L)
+        val safeSpeed = speed.coerceIn(0.25f, 4.0f)
         val nextSeq = synchronized(roomLock) {
             lastKnownSeq += 1
             lastKnownSeq
@@ -221,7 +228,10 @@ class RoomManager(
             position = clampedPos,
             updatedAt = firebase.estimatedServerNowMs(),
             by = clientId,
-            seq = nextSeq
+            seq = nextSeq,
+            speed = safeSpeed,
+            sourceName = sourceName,
+            explicitSeek = explicitSeek
         )
         val payload = state.toJson(useServerTimestamp = true)
 

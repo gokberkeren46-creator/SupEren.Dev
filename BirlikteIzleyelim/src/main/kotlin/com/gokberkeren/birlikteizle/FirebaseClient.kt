@@ -254,6 +254,8 @@ class FirebaseClient {
         }
     }
 
+    private val clockSamples = ArrayDeque<Long>()
+
     private fun updateClockOffset(dateHeader: String?) {
         if (dateHeader.isNullOrBlank()) return
         try {
@@ -261,7 +263,14 @@ class FirebaseClient {
                 timeZone = TimeZone.getTimeZone("GMT")
             }
             val serverMs = fmt.parse(dateHeader)?.time ?: return
-            serverClockOffsetMs = serverMs - System.currentTimeMillis()
+            // Add +500ms to center 1-second HTTP Date truncation, then take median of last 5 samples
+            val sample = (serverMs + 500L) - System.currentTimeMillis()
+            synchronized(clockSamples) {
+                clockSamples.addLast(sample)
+                if (clockSamples.size > 5) clockSamples.removeFirst()
+                val sorted = clockSamples.sorted()
+                serverClockOffsetMs = sorted[sorted.size / 2]
+            }
         } catch (_: Throwable) {
         }
     }

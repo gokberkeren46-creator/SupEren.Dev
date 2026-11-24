@@ -303,7 +303,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
 
     companion object {
         private const val UPDATE_INTERVAL_MS = 2_000L
-        private const val INITIAL_SHOW_MS = 3L * 60_000L       // İlk 3 dakika
+        private const val INITIAL_SHOW_MS = 1L * 60_000L       // İlk 1 dakika
         private const val PERIODIC_INTERVAL_MS = 10L * 60_000L // Her 10 dakikada bir
         private const val PERIODIC_SHOW_MS = 30_000L           // 30 saniye görünür
         private const val FADE_MS = 350L

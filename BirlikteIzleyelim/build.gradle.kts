@@ -1,7 +1,7 @@
 import java.util.Base64
 import java.util.Properties
 
-version = 8
+version = 9
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -32,7 +32,7 @@ cloudstream {
     tvTypes = listOf("All")
     requiresResources = false
     language = "tr"
-    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png"
+    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_birlikte.png"
 }
 
 dependencies {

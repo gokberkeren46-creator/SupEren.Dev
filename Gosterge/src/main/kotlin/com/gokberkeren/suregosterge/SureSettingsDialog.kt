@@ -93,7 +93,7 @@ object SureSettingsDialog {
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitle = TextView(context).apply {
-            text = "SupEren.Dev • İlk 3 dk + Her 10 dk'da 30 sn"
+            text = "SupEren.Dev • İlk 1 dk + Her 10 dk'da 30 sn"
             textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setPadding(0, 0, 0, dp(10))

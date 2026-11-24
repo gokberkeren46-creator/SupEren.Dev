@@ -1,4 +1,4 @@
-version = 2
+version = 3
 
 cloudstream {
     description = "Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati."
@@ -7,7 +7,7 @@ cloudstream {
     tvTypes = listOf("All")
     requiresResources = false
     language = "tr"
-    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png"
+    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_gosterge.png"
 }
 
 dependencies {

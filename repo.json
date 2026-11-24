@@ -1,0 +1,9 @@
+{
+  "name": "birlikte-izle",
+  "description": "Birlikte İzle - CloudStream için Firebase tabanlı Watch Party eklentisi.",
+  "manifestVersion": 1,
+  "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/birlikte-izle/master/icon.png",
+  "pluginLists": [
+    "https://raw.githubusercontent.com/gokberkeren46-creator/birlikte-izle/builds/plugins.json"
+  ]
+}

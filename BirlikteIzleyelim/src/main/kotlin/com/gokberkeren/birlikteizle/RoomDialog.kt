@@ -136,7 +136,7 @@ object RoomDialog {
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitleView = TextView(context).apply {
-            text = "GokBey-Develop"
+            text = "SupEren.Dev"
             textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
         }

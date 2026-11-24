@@ -279,6 +279,6 @@ class EmojiOverlay(private val roomManager: RoomManager) {
     }
 
     companion object {
-        private val QUICK_EMOJIS = listOf("😂", "❤️", "🔥", "😮", "😭", "👏")
+        private val QUICK_EMOJIS = listOf("😂", "❤️", "🔥", "💀", "😱", "😭", "🤬", "🤯")
     }
 }

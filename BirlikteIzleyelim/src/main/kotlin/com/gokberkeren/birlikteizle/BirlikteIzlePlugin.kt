@@ -15,9 +15,10 @@ class BirlikteIzlePlugin : Plugin() {
     private var playerHook: PlayerHook? = null
 
     override fun load(context: Context) {
-        val privateUrl = decodePrivateUrl(BuildConfig.PRIVATE_FIREBASE_URL_B64)
+        val privateUrl = decodeB64(BuildConfig.PRIVATE_FIREBASE_URL_B64)
+        val privateShortCode = decodeB64(BuildConfig.PRIVATE_SHORT_CODE_B64)
         val firebase = FirebaseClient()
-        val manager = RoomManager(context, firebase, privateUrl)
+        val manager = RoomManager(context, firebase, privateUrl, privateShortCode)
         val hook = PlayerHook(manager)
 
         roomManager = manager
@@ -39,7 +40,7 @@ class BirlikteIzlePlugin : Plugin() {
         Log.i(TAG, "Birlikteİzleyelim loaded (clientId=${manager.clientId})")
     }
 
-    private fun decodePrivateUrl(b64: String): String {
+    private fun decodeB64(b64: String): String {
         if (b64.isBlank()) return ""
         return try {
             String(Base64.decode(b64, Base64.DEFAULT), Charsets.UTF_8).trim().trimEnd('/')

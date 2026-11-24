@@ -29,7 +29,8 @@ data class RoomUiState(
 class RoomManager(
     context: Context,
     private val firebase: FirebaseClient,
-    private val privateFirebaseUrl: String
+    private val privateFirebaseUrl: String,
+    private val privateShortCode: String = ""
 ) {
     private val appContext = context.applicationContext
     private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -89,14 +90,18 @@ class RoomManager(
     fun isServerConfigured(): Boolean = firebase.isConfigured()
 
     fun isUsingPrivateShortCode(): Boolean {
-        return serverInput.equals(PRIVATE_SHORT_CODE, ignoreCase = true) && privateFirebaseUrl.isNotBlank()
+        return privateShortCode.isNotBlank() &&
+            privateFirebaseUrl.isNotBlank() &&
+            serverInput.equals(privateShortCode, ignoreCase = true)
     }
 
     private fun applyServerConfig(input: String) {
         val clean = input.trim()
         when {
-            clean.equals(PRIVATE_SHORT_CODE, ignoreCase = true) && privateFirebaseUrl.isNotBlank() -> {
-                firebase.configure(privateFirebaseUrl, prefix = PRIVATE_SHORT_CODE)
+            privateShortCode.isNotBlank() &&
+                privateFirebaseUrl.isNotBlank() &&
+                clean.equals(privateShortCode, ignoreCase = true) -> {
+                firebase.configure(privateFirebaseUrl, prefix = privateShortCode)
             }
             clean.startsWith("https://", ignoreCase = true) || clean.startsWith("http://", ignoreCase = true) -> {
                 firebase.configure(clean, prefix = "")
@@ -471,7 +476,6 @@ class RoomManager(
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val KEY_SERVER_INPUT = "server_input"
-        private const val PRIVATE_SHORT_CODE = "gokbey4616"
         private const val HEARTBEAT_MS = 30_000L
         private const val STATE_FALLBACK_MS = 12_000L
         private const val MEMBER_TTL_MS = 180_000L

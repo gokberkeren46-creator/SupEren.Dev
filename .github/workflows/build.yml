@@ -43,6 +43,7 @@ jobs:
       - name: Build Plugins
         env:
           FIREBASE_URL: ${{ secrets.FIREBASE_URL }}
+          SHORT_CODE: ${{ secrets.SHORT_CODE }}
         run: |
           cd $GITHUB_WORKSPACE/src
           chmod +x gradlew

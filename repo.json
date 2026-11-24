@@ -1,9 +1,9 @@
 {
-  "name": "GokBey-Develop",
-  "description": "GokBey-Develop - CloudStream için Birlikteİzleyelim Watch Party eklentisi.",
+  "name": "SupEren.Dev",
+  "description": "SupEren.Dev - CloudStream için açık kaynak Birlikteİzleyelim Watch Party eklentisi.",
   "manifestVersion": 1,
-  "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/GokBey-Develop/master/icon.png",
+  "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png",
   "pluginLists": [
-    "https://raw.githubusercontent.com/gokberkeren46-creator/GokBey-Develop/builds/plugins.json"
+    "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/plugins.json"
   ]
 }

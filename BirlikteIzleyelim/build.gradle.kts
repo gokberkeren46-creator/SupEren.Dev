@@ -1,7 +1,7 @@
 import java.util.Base64
 import java.util.Properties
 
-version = 7
+version = 8
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -16,11 +16,14 @@ val privateFirebaseUrl: String = (
         ?: ""
 ).trim().trimEnd('/')
 
-val privateFirebaseUrlB64: String = if (privateFirebaseUrl.isNotEmpty()) {
-    Base64.getEncoder().encodeToString(privateFirebaseUrl.toByteArray(Charsets.UTF_8))
-} else {
-    ""
-}
+val privateShortCode: String = (
+    System.getenv("SHORT_CODE")?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("firebase.shortcode")?.takeIf { it.isNotBlank() }
+        ?: ""
+).trim()
+
+fun encodeB64(value: String): String =
+    if (value.isNotEmpty()) Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) else ""
 
 cloudstream {
     description = "Birlikteİzleyelim - Sevdiklerinizle senkronize izleyin"
@@ -29,7 +32,7 @@ cloudstream {
     tvTypes = listOf("All")
     requiresResources = false
     language = "tr"
-    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/GokBey-Develop/master/icon.png"
+    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png"
 }
 
 dependencies {
@@ -42,7 +45,8 @@ android {
     namespace = "com.gokberkeren.birlikteizle"
 
     defaultConfig {
-        buildConfigField("String", "PRIVATE_FIREBASE_URL_B64", "\"$privateFirebaseUrlB64\"")
+        buildConfigField("String", "PRIVATE_FIREBASE_URL_B64", "\"${encodeB64(privateFirebaseUrl)}\"")
+        buildConfigField("String", "PRIVATE_SHORT_CODE_B64", "\"${encodeB64(privateShortCode)}\"")
     }
 
     buildFeatures {

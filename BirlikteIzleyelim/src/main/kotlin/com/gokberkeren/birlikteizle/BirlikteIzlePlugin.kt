@@ -35,7 +35,7 @@ class BirlikteIzlePlugin : Plugin() {
             RoomDialog.show(targetCtx, manager)
         }
 
-        Log.i(TAG, "Birlikte İzle loaded (clientId=${manager.clientId})")
+        Log.i(TAG, "Birlikteİzleyelim loaded (clientId=${manager.clientId})")
     }
 
     companion object {

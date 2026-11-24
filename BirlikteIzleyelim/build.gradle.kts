@@ -1,6 +1,6 @@
 import java.util.Properties
 
-version = 1
+version = 2
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -16,13 +16,13 @@ val firebaseUrl: String = (
 ).trim().trimEnd('/')
 
 cloudstream {
-    description = "Sevdiklerinizle senkronize izleyin"
+    description = "Birlikteİzleyelim - Sevdiklerinizle senkronize izleyin"
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")
     requiresResources = false
     language = "tr"
-    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/birlikte-izle/master/icon.png"
+    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/GokBey-Develop/master/icon.png"
 }
 
 dependencies {

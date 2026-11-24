@@ -41,7 +41,9 @@ class FirebaseClient(rawBaseUrl: String) {
 
     private val sseClient = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(0, TimeUnit.MILLISECONDS) // keep-alive SSE stream
+        // Firebase RTDB sends keep-alive every 30s; 45s timeout detects silent Wi-Fi/NAT drops
+        .readTimeout(45, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 
     @Volatile

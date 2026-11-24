@@ -49,10 +49,11 @@ data class MediaInfo(
     val name: String = "",
     val season: Int? = null,
     val episode: Int? = null,
+    val episodeId: Int? = null,
     val by: String = "",
     val updatedAt: Long = 0L
 ) {
-    fun uniqueKey(): String = "$url|$apiName|${season ?: -1}|${episode ?: -1}"
+    fun uniqueKey(): String = "$url|$apiName|${season ?: -1}|${episode ?: -1}|${episodeId ?: -1}"
 
     fun displayTitle(): String {
         val base = name.ifBlank { "İçerik" }
@@ -70,6 +71,7 @@ data class MediaInfo(
             put("name", name)
             if (season != null) put("season", season) else put("season", JSONObject.NULL)
             if (episode != null) put("episode", episode) else put("episode", JSONObject.NULL)
+            if (episodeId != null) put("episodeId", episodeId) else put("episodeId", JSONObject.NULL)
             put("by", by)
             if (useServerTimestamp) {
                 put("updatedAt", JSONObject().put(".sv", "timestamp"))
@@ -87,14 +89,57 @@ data class MediaInfo(
             if (url.isBlank() || apiName.isBlank()) return null
             val season = if (obj.isNull("season")) null else obj.optInt("season").takeIf { it > 0 }
             val episode = if (obj.isNull("episode")) null else obj.optInt("episode").takeIf { it > 0 }
+            val episodeId = if (obj.isNull("episodeId") || !obj.has("episodeId")) null else obj.optInt("episodeId")
             return MediaInfo(
                 url = url,
                 apiName = apiName,
                 name = obj.optString("name", ""),
                 season = season,
                 episode = episode,
+                episodeId = episodeId,
                 by = obj.optString("by", ""),
                 updatedAt = obj.optLong("updatedAt", 0L)
+            )
+        }
+    }
+}
+
+/**
+ * Live floating emoji reaction stored under /rooms/{code}/reaction.
+ */
+data class EmojiReaction(
+    val id: String = "",
+    val emoji: String = "",
+    val by: String = "",
+    val senderName: String = "",
+    val ts: Long = 0L
+) {
+    fun toJson(useServerTimestamp: Boolean = true): JSONObject {
+        return JSONObject().apply {
+            put("id", id)
+            put("emoji", emoji)
+            put("by", by)
+            put("senderName", senderName)
+            if (useServerTimestamp) {
+                put("ts", JSONObject().put(".sv", "timestamp"))
+            } else {
+                put("ts", ts)
+            }
+        }
+    }
+
+    companion object {
+        fun fromJson(obj: JSONObject?): EmojiReaction? {
+            if (obj == null) return null
+            val id = obj.optString("id", "")
+            val emoji = obj.optString("emoji", "")
+            if (id.isBlank() || emoji.isBlank()) return null
+            return EmojiReaction(
+                id = id,
+                emoji = emoji,
+                by = obj.optString("by", ""),
+                senderName = obj.optString("senderName", "").ifBlank { "Katılımcı" },
+                ts = obj.optLong("ts", 0L)
             )
         }
     }
@@ -123,6 +168,7 @@ data class RoomSnapshot(
     val lastActive: Long = 0L,
     val state: PlaybackState? = null,
     val media: MediaInfo? = null,
+    val reaction: EmojiReaction? = null,
     val members: Map<String, RoomMember> = emptyMap()
 ) {
     companion object {
@@ -147,6 +193,7 @@ data class RoomSnapshot(
                 lastActive = obj.optLong("lastActive", 0L),
                 state = PlaybackState.fromJson(obj.optJSONObject("state")),
                 media = MediaInfo.fromJson(obj.optJSONObject("media")),
+                reaction = EmojiReaction.fromJson(obj.optJSONObject("reaction")),
                 members = membersMap
             )
         }

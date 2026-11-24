@@ -62,14 +62,17 @@ class RoomManager(
     private var roomJson = JSONObject()
     private var sseHandle: Closeable? = null
     private var heartbeatJob: Job? = null
+    private var stateFallbackJob: Job? = null
 
     private var lastKnownSeq: Long = 0L
     private var lastAppliedRemoteSeq: Long = -1L
     private var lastAppliedMediaKey: String? = null
     private var lastAppliedMediaAt: Long = 0L
+    private var lastAppliedReactionId: String? = null
 
     var onRemoteState: ((PlaybackState, senderName: String) -> Unit)? = null
     var onRemoteMedia: ((MediaInfo, senderName: String) -> Unit)? = null
+    var onRemoteReaction: ((EmojiReaction) -> Unit)? = null
 
     fun estimatedServerNowMs(): Long = firebase.estimatedServerNowMs()
 
@@ -141,6 +144,8 @@ class RoomManager(
         sseHandle = null
         heartbeatJob?.cancel()
         heartbeatJob = null
+        stateFallbackJob?.cancel()
+        stateFallbackJob = null
 
         synchronized(roomLock) {
             roomJson = JSONObject()
@@ -148,6 +153,7 @@ class RoomManager(
             lastAppliedRemoteSeq = -1L
             lastAppliedMediaKey = null
             lastAppliedMediaAt = 0L
+            lastAppliedReactionId = null
         }
         _uiState.value = RoomUiState()
 
@@ -158,19 +164,21 @@ class RoomManager(
         }
     }
 
-    fun publishState(playing: Boolean, positionMs: Long) {
-        val code = currentRoomCode ?: return
+    fun publishState(playing: Boolean, positionMs: Long): PlaybackState? {
+        val code = currentRoomCode ?: return null
         val clampedPos = positionMs.coerceAtLeast(0L)
         val nextSeq = synchronized(roomLock) {
             lastKnownSeq += 1
             lastKnownSeq
         }
-        val payload = PlaybackState(
+        val state = PlaybackState(
             playing = playing,
             position = clampedPos,
+            updatedAt = firebase.estimatedServerNowMs(),
             by = clientId,
             seq = nextSeq
-        ).toJson(useServerTimestamp = true)
+        )
+        val payload = state.toJson(useServerTimestamp = true)
 
         scope.launch {
             firebase.patch("rooms/$code/state", payload.toString())
@@ -179,6 +187,7 @@ class RoomManager(
                 JSONObject().put("lastActive", RoomSnapshot.serverTimestampJson()).toString()
             )
         }
+        return state
     }
 
     fun publishMedia(media: MediaInfo) {
@@ -197,6 +206,24 @@ class RoomManager(
         }
     }
 
+    fun sendReaction(emoji: String) {
+        val code = currentRoomCode ?: return
+        val reaction = EmojiReaction(
+            id = UUID.randomUUID().toString().replace("-", "").take(10),
+            emoji = emoji,
+            by = clientId,
+            senderName = displayName,
+            ts = firebase.estimatedServerNowMs()
+        )
+        synchronized(roomLock) {
+            lastAppliedReactionId = reaction.id
+        }
+        onRemoteReaction?.invoke(reaction)
+        scope.launch {
+            firebase.put("rooms/$code/reaction", reaction.toJson(useServerTimestamp = true).toString())
+        }
+    }
+
     fun memberName(cid: String): String {
         return _uiState.value.members.firstOrNull { it.clientId == cid }?.name
             ?: if (cid == clientId) displayName else "Katılımcı"
@@ -209,6 +236,7 @@ class RoomManager(
             lastAppliedRemoteSeq = -1L
             lastAppliedMediaKey = null
             lastAppliedMediaAt = 0L
+            lastAppliedReactionId = null
         }
         _uiState.value = RoomUiState(roomCode = code, connected = false)
 
@@ -231,6 +259,20 @@ class RoomManager(
                 delay(HEARTBEAT_MS)
                 if (currentRoomCode == code) {
                     updateMemberPresence(code)
+                }
+            }
+        }
+
+        // Lightweight REST safety net so state sync never silently stalls if SSE hiccups
+        stateFallbackJob = scope.launch {
+            while (isActive && currentRoomCode == code) {
+                delay(STATE_FALLBACK_MS)
+                if (currentRoomCode != code) break
+                val raw = firebase.get("rooms/$code/state") ?: continue
+                try {
+                    val st = PlaybackState.fromJson(JSONObject(raw)) ?: continue
+                    processIncomingState(st)
+                } catch (_: Throwable) {
                 }
             }
         }
@@ -266,19 +308,7 @@ class RoomManager(
             latestMedia = snap.media
         )
 
-        snap.state?.let { st ->
-            var shouldEmit = false
-            synchronized(roomLock) {
-                lastKnownSeq = max(lastKnownSeq, st.seq)
-                if (st.by.isNotBlank() && st.by != clientId && st.seq > lastAppliedRemoteSeq) {
-                    lastAppliedRemoteSeq = st.seq
-                    shouldEmit = true
-                }
-            }
-            if (shouldEmit) {
-                onRemoteState?.invoke(st, memberName(st.by))
-            }
-        }
+        snap.state?.let { processIncomingState(it) }
 
         snap.media?.let { med ->
             var shouldEmit = false
@@ -295,6 +325,36 @@ class RoomManager(
             if (shouldEmit) {
                 onRemoteMedia?.invoke(med, memberName(med.by))
             }
+        }
+
+        snap.reaction?.let { react ->
+            var shouldEmit = false
+            val ageMs = if (react.ts > 0L) (now - react.ts) else 0L
+            synchronized(roomLock) {
+                if (react.id != lastAppliedReactionId) {
+                    lastAppliedReactionId = react.id
+                    if (react.by != clientId && ageMs < REACTION_MAX_AGE_MS) {
+                        shouldEmit = true
+                    }
+                }
+            }
+            if (shouldEmit) {
+                onRemoteReaction?.invoke(react)
+            }
+        }
+    }
+
+    private fun processIncomingState(st: PlaybackState) {
+        var shouldEmit = false
+        synchronized(roomLock) {
+            lastKnownSeq = max(lastKnownSeq, st.seq)
+            if (st.by.isNotBlank() && st.by != clientId && st.seq > lastAppliedRemoteSeq) {
+                lastAppliedRemoteSeq = st.seq
+                shouldEmit = true
+            }
+        }
+        if (shouldEmit) {
+            onRemoteState?.invoke(st, memberName(st.by))
         }
     }
 
@@ -354,7 +414,9 @@ class RoomManager(
         private const val KEY_CLIENT_ID = "client_id"
         private const val KEY_DISPLAY_NAME = "display_name"
         private const val HEARTBEAT_MS = 30_000L
+        private const val STATE_FALLBACK_MS = 12_000L
         private const val MEMBER_TTL_MS = 180_000L
+        private const val REACTION_MAX_AGE_MS = 15_000L
         private val CODE_REGEX = Regex("^\\d{6}$")
     }
 }

@@ -15,6 +15,7 @@ import androidx.fragment.app.FragmentManager
 import com.lagradost.cloudstream3.CommonActivity
 import com.lagradost.cloudstream3.ui.player.AbstractPlayerFragment
 import com.lagradost.cloudstream3.ui.player.CSPlayerEvent
+import com.lagradost.cloudstream3.ui.player.CSPlayerLoading
 import com.lagradost.cloudstream3.ui.player.GeneratorPlayer
 import com.lagradost.cloudstream3.ui.player.IPlayer
 import com.lagradost.cloudstream3.ui.player.PlayerEventSource
@@ -37,8 +38,9 @@ import java.util.WeakHashMap
 import kotlin.math.abs
 
 /**
- * Hooks CloudStream player lifecycle, applies smooth ±5% micro-speed drift correction
- * (zero cutting between 0.8s and 15s), syncs playback speed & mirrors, and renders emojis.
+ * Hooks CloudStream player lifecycle using live fragment.player and CSPlayerLoading
+ * (ignoring IsBuffering/IsEnded to prevent false pauses or pull-backs),
+ * smooth ±5% micro-speed sync (0.8s–15s), speed & mirror sync, and floating emojis.
  */
 class PlayerHook(private val roomManager: RoomManager) {
 
@@ -48,7 +50,6 @@ class PlayerHook(private val roomManager: RoomManager) {
 
     private var currentActivityRef: WeakReference<FragmentActivity>? = null
     private var activePlayerFragmentRef: WeakReference<AbstractPlayerFragment<*>>? = null
-    private var activeIPlayerRef: WeakReference<IPlayer>? = null
 
     private var attachedExoPlayerRef: WeakReference<Any>? = null
     private var attachedExoListener: Any? = null
@@ -60,10 +61,10 @@ class PlayerHook(private val roomManager: RoomManager) {
     private var suppressUntilElapsedMs: Long = 0L
 
     @Volatile
-    private var verifyWindowUntilMs: Long = 0L
+    private var verifySpeedUntilMs: Long = 0L
 
     @Volatile
-    private var lastObservedPlaying: Boolean? = null
+    private var lastStableStatus: CSPlayerLoading? = null
 
     @Volatile
     private var lastObservedPositionMs: Long = -1L
@@ -124,6 +125,8 @@ class PlayerHook(private val roomManager: RoomManager) {
     fun currentActivity(): FragmentActivity? = currentActivityRef?.get()?.takeIf {
         !it.isFinishing && !it.isDestroyed
     }
+
+    private fun livePlayer(): IPlayer? = activePlayerFragmentRef?.get()?.player
 
     private val activityCallbacks = object : Application.ActivityLifecycleCallbacks {
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
@@ -207,20 +210,19 @@ class PlayerHook(private val roomManager: RoomManager) {
         detachFromPlayer()
         activePlayerFragmentRef = WeakReference(fragment)
         val iPlayer = fragment.player
-        activeIPlayerRef = WeakReference(iPlayer)
-        lastObservedPlaying = iPlayer.getIsPlaying()
+        val status = fragment.currentPlayerStatus
+        lastStableStatus = if (status == CSPlayerLoading.IsPlaying || status == CSPlayerLoading.IsPaused) status else null
         lastObservedPositionMs = iPlayer.getPosition() ?: 0L
         lastObservedSourceName = extractCurrentSourceName(fragment)
         targetBaseSpeed = iPlayer.getPlaybackSpeed().coerceIn(0.25f, 4.0f)
         isNudgingSpeed = false
-        verifyWindowUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
 
         (fragment.view as? ViewGroup)?.let { rootView ->
             emojiOverlay.attach(rootView)
         }
 
         tryAttachExoListener(fragment, iPlayer)
-        startMonitorLoop(fragment, iPlayer)
+        startMonitorLoop(fragment)
         publishCurrentMediaIfNeeded(fragment)
     }
 
@@ -230,9 +232,8 @@ class PlayerHook(private val roomManager: RoomManager) {
         emojiOverlay.detach()
 
         detachExoListenerOnly()
-        activeIPlayerRef = null
         activePlayerFragmentRef = null
-        lastObservedPlaying = null
+        lastStableStatus = null
         lastObservedPositionMs = -1L
         lastObservedSourceName = ""
         isNudgingSpeed = false
@@ -302,7 +303,7 @@ class PlayerHook(private val roomManager: RoomManager) {
             Log.d(TAG, "Attached Media3 Player.Listener via reflection")
             true
         } catch (t: Throwable) {
-            Log.w(TAG, "Could not attach Player.Listener (falling back to IPlayer polling)", t)
+            Log.w(TAG, "Could not attach Player.Listener (using CSPlayerLoading polling)", t)
             false
         }
     }
@@ -338,18 +339,21 @@ class PlayerHook(private val roomManager: RoomManager) {
         }
     }
 
-    private fun startMonitorLoop(fragment: AbstractPlayerFragment<*>, iPlayer: IPlayer) {
+    private fun startMonitorLoop(fragment: AbstractPlayerFragment<*>) {
         monitorJob = scope.launch {
             var metaAttempted = false
             while (isActive) {
                 delay(MONITOR_INTERVAL_MS)
                 emojiOverlay.updateVisibility()
 
+                // Always read live fragment.player (never hold a stale IPlayer instance)
+                val iPlayer = fragment.player
+
                 // Re-attach if CS3IPlayer replaced its ExoPlayer instance (e.g., source/mirror switch)
                 val currentExo = resolveExoPlayer(fragment, iPlayer)
                 if (currentExo != null && currentExo !== attachedExoPlayerRef?.get()) {
                     tryAttachExoListener(fragment, iPlayer)
-                    verifyWindowUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
+                    verifySpeedUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
                 }
 
                 if (!metaAttempted) {
@@ -358,19 +362,25 @@ class PlayerHook(private val roomManager: RoomManager) {
 
                 if (!roomManager.isInRoom()) continue
 
+                val status = fragment.currentPlayerStatus
+                // CRITICAL: Completely ignore buffering/ended states so temporary buffering NEVER pauses or seeks!
+                if (status == CSPlayerLoading.IsBuffering || status == CSPlayerLoading.IsEnded) {
+                    continue
+                }
+
                 val nowElapsed = SystemClock.elapsedRealtime()
-                val currentPlaying = iPlayer.getIsPlaying()
+                val currentPlaying = (status == CSPlayerLoading.IsPlaying)
                 val currentPos = iPlayer.getPosition() ?: continue
                 val currentSource = extractCurrentSourceName(fragment)
 
                 if (isSuppressed()) {
-                    lastObservedPlaying = currentPlaying
+                    lastStableStatus = status
                     lastObservedPositionMs = currentPos
                     if (currentSource.isNotBlank()) lastObservedSourceName = currentSource
                     continue
                 }
 
-                // Detect local mirror/source switch
+                // 1. Detect local mirror/source switch
                 if (currentSource.isNotBlank() && currentSource != lastObservedSourceName) {
                     lastObservedSourceName = currentSource
                     if (!currentSource.equals(lastAppliedRemoteSourceName, ignoreCase = true)) {
@@ -381,20 +391,20 @@ class PlayerHook(private val roomManager: RoomManager) {
                             sourceName = currentSource,
                             explicitSeek = false
                         )
-                        verifyWindowUntilMs = nowElapsed + POST_RESUME_VERIFY_MS
+                        verifySpeedUntilMs = nowElapsed + POST_RESUME_VERIFY_MS
                         continue
                     }
                 }
 
-                // Detect local speed change if listener missed it (ignoring our own ±5% micro-nudge)
+                // 2. Detect local speed changes on live iPlayer (ignoring our own ±5% micro-nudge)
                 val observedSpeed = iPlayer.getPlaybackSpeed().coerceIn(0.25f, 4.0f)
                 val isOurNudge = isNudgingSpeed && abs(observedSpeed - lastAppliedNudgeSpeed) < 0.02f
                 if (!isOurNudge && abs(observedSpeed - targetBaseSpeed) >= USER_SPEED_CHANGE_MIN_DELTA) {
-                    // During 5s verify window after resume/source-switch, re-apply room speed if CS reset it to 1.0x
-                    val inVerifyWindow = nowElapsed < verifyWindowUntilMs
-                    if (inVerifyWindow && abs(observedSpeed - 1.0f) < 0.02f && abs(targetBaseSpeed - 1.0f) > 0.05f) {
+                    val inVerifyWindow = nowElapsed < verifySpeedUntilMs
+                    if (inVerifyWindow && abs(observedSpeed - 1.0f) < 0.02f && abs(targetBaseSpeed - 1.0f) > 0.04f) {
+                        // CloudStream reset speed to 1.0x during source reload; re-apply room speed
                         suppressFor(600L)
-                        iPlayer.setPlaybackSpeed(targetBaseSpeed)
+                        applySpeedToPlayer(fragment, iPlayer, targetBaseSpeed)
                     } else {
                         targetBaseSpeed = observedSpeed
                         isNudgingSpeed = false
@@ -409,22 +419,37 @@ class PlayerHook(private val roomManager: RoomManager) {
                     }
                 }
 
-                val prevPlaying = lastObservedPlaying
+                // 3. Detect genuine IsPlaying <-> IsPaused transitions (even if Media3 listener isn't attached)
+                val prevStatus = lastStableStatus
                 val prevPos = lastObservedPositionMs
-                lastObservedPlaying = currentPlaying
+                lastStableStatus = status
                 lastObservedPositionMs = currentPos
 
-                val hasExoListener = attachedExoPlayerRef?.get() != null && attachedExoListener != null
-                if (!hasExoListener && prevPlaying != null && prevPlaying != currentPlaying) {
-                    publishLocalState(currentPlaying, currentPos, targetBaseSpeed, currentSource, explicitSeek = true)
-                    continue
-                }
-                if (!hasExoListener && prevPos >= 0L && abs(currentPos - prevPos) > LOCAL_JUMP_THRESHOLD_MS) {
-                    publishLocalState(currentPlaying, currentPos, targetBaseSpeed, currentSource, explicitSeek = true)
+                if (prevStatus != null && prevStatus != status) {
+                    publishLocalState(
+                        playing = currentPlaying,
+                        positionMs = currentPos,
+                        speed = targetBaseSpeed,
+                        sourceName = currentSource,
+                        explicitSeek = false
+                    )
                     continue
                 }
 
-                // Smooth drift control during active playback
+                // Detect manual large seek (>5s jump in 1s tick) if Media3 listener isn't attached
+                val hasExoListener = attachedExoPlayerRef?.get() != null && attachedExoListener != null
+                if (!hasExoListener && prevPos >= 0L && abs(currentPos - prevPos) > LOCAL_JUMP_THRESHOLD_MS) {
+                    publishLocalState(
+                        playing = currentPlaying,
+                        positionMs = currentPos,
+                        speed = targetBaseSpeed,
+                        sourceName = currentSource,
+                        explicitSeek = true
+                    )
+                    continue
+                }
+
+                // 4. Smooth drift control during active playback (zero cutting for 0.8s–15s!)
                 val sync = latestSyncState ?: continue
                 if (sync.playing && currentPlaying && sync.updatedAt > 0L) {
                     val elapsed = (roomManager.estimatedServerNowMs() - sync.updatedAt).coerceAtLeast(0L)
@@ -432,18 +457,8 @@ class PlayerHook(private val roomManager: RoomManager) {
                     val duration = iPlayer.getDuration() ?: Long.MAX_VALUE
                     if (expectedPos >= duration) continue
 
-                    val drift = expectedPos - currentPos // >0 means we are behind; <0 means we are ahead
+                    val drift = expectedPos - currentPos // >0: behind; <0: ahead
                     val absDrift = abs(drift)
-
-                    // First 5s after resume/source switch: re-check base speed and align if notably off
-                    val inVerifyWindow = nowElapsed < verifyWindowUntilMs
-                    if (inVerifyWindow && absDrift > VERIFY_WINDOW_SEEK_MS) {
-                        resetSpeedNudge(iPlayer)
-                        suppressFor(SUPPRESS_WINDOW_MS)
-                        iPlayer.seekTo(expectedPos, PlayerEventSource.Sync)
-                        lastObservedPositionMs = expectedPos
-                        continue
-                    }
 
                     when {
                         absDrift > HARD_SEEK_DRIFT_MS -> {
@@ -454,7 +469,7 @@ class PlayerHook(private val roomManager: RoomManager) {
                             lastObservedPositionMs = expectedPos
                         }
                         absDrift > NUDGE_START_DRIFT_MS -> {
-                            // Smooth ±5% speed nudge (0.8s–15s): zero cutting, imperceptible catch-up
+                            // Smooth ±5% micro-speed adjustment (0.8s–15s): zero cutting!
                             val factor = if (drift > 0L) NUDGE_FAST_FACTOR else NUDGE_SLOW_FACTOR
                             val nudgedSpeed = (targetBaseSpeed * factor).coerceIn(0.25f, 3.5f)
                             if (abs(iPlayer.getPlaybackSpeed() - nudgedSpeed) > 0.01f) {
@@ -470,6 +485,21 @@ class PlayerHook(private val roomManager: RoomManager) {
                 } else if (isNudgingSpeed) {
                     resetSpeedNudge(iPlayer)
                 }
+            }
+        }
+    }
+
+    private fun applySpeedToPlayer(fragment: AbstractPlayerFragment<*>?, iPlayer: IPlayer, speed: Float) {
+        iPlayer.setPlaybackSpeed(speed)
+        if (fragment != null) {
+            try {
+                // Also notify FullScreenPlayer.setPlayBackSpeed(Float) if present so UI speed badge updates
+                val m = findMethodRecursive(fragment.javaClass, "setPlayBackSpeed", Float::class.javaPrimitiveType!!)
+                if (m != null) {
+                    m.isAccessible = true
+                    m.invoke(fragment, speed)
+                }
+            } catch (_: Throwable) {
             }
         }
     }
@@ -490,7 +520,7 @@ class PlayerHook(private val roomManager: RoomManager) {
         sourceName: String,
         explicitSeek: Boolean
     ) {
-        lastObservedPlaying = playing
+        lastStableStatus = if (playing) CSPlayerLoading.IsPlaying else CSPlayerLoading.IsPaused
         lastObservedPositionMs = positionMs
         if (sourceName.isNotBlank()) lastObservedSourceName = sourceName
         roomManager.publishState(
@@ -506,27 +536,29 @@ class PlayerHook(private val roomManager: RoomManager) {
 
     private fun onLocalPlayingChanged(playWhenReady: Boolean) {
         if (!roomManager.isInRoom() || isSuppressed()) return
-        val player = activeIPlayerRef?.get() ?: return
+        val fragment = activePlayerFragmentRef?.get() ?: return
+        val player = fragment.player
         val pos = player.getPosition() ?: 0L
-        val src = activePlayerFragmentRef?.get()?.let { extractCurrentSourceName(it) }.orEmpty()
+        val src = extractCurrentSourceName(fragment)
         if (playWhenReady) {
-            verifyWindowUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
+            verifySpeedUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
         }
         publishLocalState(
             playing = playWhenReady,
             positionMs = pos,
             speed = targetBaseSpeed,
             sourceName = src,
-            explicitSeek = true
+            explicitSeek = false
         )
     }
 
     private fun onLocalSeekDetected() {
         if (!roomManager.isInRoom() || isSuppressed()) return
-        val player = activeIPlayerRef?.get() ?: return
+        val fragment = activePlayerFragmentRef?.get() ?: return
+        val player = fragment.player
         val pos = player.getPosition() ?: return
-        val playing = player.getIsPlaying()
-        val src = activePlayerFragmentRef?.get()?.let { extractCurrentSourceName(it) }.orEmpty()
+        val playing = (fragment.currentPlayerStatus != CSPlayerLoading.IsPaused)
+        val src = extractCurrentSourceName(fragment)
         resetSpeedNudge(player)
         publishLocalState(
             playing = playing,
@@ -542,10 +574,11 @@ class PlayerHook(private val roomManager: RoomManager) {
         if (isNudgingSpeed && abs(newSpeed - lastAppliedNudgeSpeed) < 0.02f) return
         if (abs(newSpeed - targetBaseSpeed) < USER_SPEED_CHANGE_MIN_DELTA) return
 
-        val player = activeIPlayerRef?.get() ?: return
+        val fragment = activePlayerFragmentRef?.get() ?: return
+        val player = fragment.player
         val pos = player.getPosition() ?: 0L
-        val playing = player.getIsPlaying()
-        val src = activePlayerFragmentRef?.get()?.let { extractCurrentSourceName(it) }.orEmpty()
+        val playing = (fragment.currentPlayerStatus != CSPlayerLoading.IsPaused)
+        val src = extractCurrentSourceName(fragment)
         targetBaseSpeed = newSpeed
         isNudgingSpeed = false
         publishLocalState(
@@ -559,8 +592,8 @@ class PlayerHook(private val roomManager: RoomManager) {
 
     private fun applyRemoteState(state: PlaybackState, senderName: String) {
         latestSyncState = state
-        val player = activeIPlayerRef?.get() ?: return
-        val fragment = activePlayerFragmentRef?.get()
+        val fragment = activePlayerFragmentRef?.get() ?: return
+        val player = fragment.player
 
         val targetPos = if (state.playing && state.updatedAt > 0L) {
             val elapsed = (roomManager.estimatedServerNowMs() - state.updatedAt).coerceAtLeast(0L)
@@ -569,12 +602,12 @@ class PlayerHook(private val roomManager: RoomManager) {
             state.position.coerceAtLeast(0L)
         }
 
-        val speedChanged = abs(state.speed - targetBaseSpeed) >= 0.04f
+        val speedChanged = abs(state.speed - targetBaseSpeed) >= 0.03f
         if (speedChanged) {
             targetBaseSpeed = state.speed
             isNudgingSpeed = false
             suppressFor(SUPPRESS_WINDOW_MS)
-            player.setPlaybackSpeed(state.speed)
+            applySpeedToPlayer(fragment, player, state.speed)
             val speedStr = String.format(Locale.US, "%.2gx", state.speed)
             showToast("$senderName hızı $speedStr yaptı")
         }
@@ -589,7 +622,7 @@ class PlayerHook(private val roomManager: RoomManager) {
             if (switched) {
                 lastObservedSourceName = state.sourceName
                 suppressFor(SOURCE_SWITCH_SUPPRESS_MS)
-                verifyWindowUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
+                verifySpeedUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
                 showToast("$senderName kaynağa geçti: ${state.sourceName}")
                 return
             } else {
@@ -600,10 +633,10 @@ class PlayerHook(private val roomManager: RoomManager) {
         val currentPos = player.getPosition() ?: 0L
         val duration = player.getDuration() ?: Long.MAX_VALUE
         val absDrift = abs(currentPos - targetPos)
-        val currentPlaying = player.getIsPlaying()
+        val currentPlaying = (fragment.currentPlayerStatus != CSPlayerLoading.IsPaused)
         val playStateChanged = currentPlaying != state.playing
 
-        // Hard seek ONLY if user explicitly seeked/toggled play-pause OR drift > 15s
+        // Hard seek ONLY on explicit manual seek OR huge desync (>15s)
         val shouldHardSeek = (state.explicitSeek && absDrift > EXPLICIT_SEEK_MIN_DRIFT_MS) ||
             absDrift > HARD_SEEK_DRIFT_MS
 
@@ -618,9 +651,9 @@ class PlayerHook(private val roomManager: RoomManager) {
             suppressFor(SUPPRESS_WINDOW_MS)
             val event = if (state.playing) CSPlayerEvent.Play else CSPlayerEvent.Pause
             player.handleEvent(event, PlayerEventSource.Sync)
-            lastObservedPlaying = state.playing
+            lastStableStatus = if (state.playing) CSPlayerLoading.IsPlaying else CSPlayerLoading.IsPaused
             if (state.playing) {
-                verifyWindowUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
+                verifySpeedUntilMs = SystemClock.elapsedRealtime() + POST_RESUME_VERIFY_MS
             }
             val statusMsg = if (state.playing) "$senderName oynattı" else "$senderName duraklattı"
             showToast(statusMsg)
@@ -810,6 +843,18 @@ class PlayerHook(private val roomManager: RoomManager) {
         return null
     }
 
+    private fun findMethodRecursive(clazz: Class<*>, name: String, vararg paramTypes: Class<*>): Method? {
+        var cur: Class<*>? = clazz
+        while (cur != null) {
+            try {
+                return cur.getDeclaredMethod(name, *paramTypes)
+            } catch (_: NoSuchMethodException) {
+                cur = cur.superclass
+            }
+        }
+        return null
+    }
+
     private fun findMethodByName(clazz: Class<*>, name: String, paramCount: Int): Method? {
         return clazz.methods.firstOrNull { it.name == name && it.parameterCount == paramCount }
     }
@@ -843,15 +888,14 @@ class PlayerHook(private val roomManager: RoomManager) {
         private const val SOURCE_SWITCH_SUPPRESS_MS = 3_000L
         private const val POST_RESUME_VERIFY_MS = 5_000L
         private const val REMOTE_MEDIA_LOCK_MS = 15_000L
-        private const val MONITOR_INTERVAL_MS = 1_500L
+        private const val MONITOR_INTERVAL_MS = 1_000L
         private const val NUDGE_START_DRIFT_MS = 800L
         private const val NUDGE_STOP_DRIFT_MS = 400L
-        private const val VERIFY_WINDOW_SEEK_MS = 2_500L
         private const val EXPLICIT_SEEK_MIN_DRIFT_MS = 1_500L
         private const val HARD_SEEK_DRIFT_MS = 15_000L
-        private const val LOCAL_JUMP_THRESHOLD_MS = 3_500L
+        private const val LOCAL_JUMP_THRESHOLD_MS = 5_000L
         private const val NUDGE_FAST_FACTOR = 1.05f
         private const val NUDGE_SLOW_FACTOR = 0.95f
-        private const val USER_SPEED_CHANGE_MIN_DELTA = 0.08f
+        private const val USER_SPEED_CHANGE_MIN_DELTA = 0.04f
     }
 }

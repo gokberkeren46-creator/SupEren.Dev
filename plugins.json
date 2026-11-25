@@ -1,0 +1,162 @@
+[
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_birlikte.png",
+        "fileHash": "sha256-f8d3d2e0d82d44e9fc643733fbf3284ff1882b1b6e57e415217c255964b7a5a5",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 75268,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 10,
+        "internalName": "BirlikteIzleyelim",
+        "description": "Birlikte\u0130zleyelim - Sevdiklerinizle senkronize izleyin. Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/BirlikteIzleyelim.cs3",
+        "name": "BirlikteIzleyelim"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_bitrate.png",
+        "fileHash": "sha256-9cbc6634c694ee2525b9e55c670516bdb2e7eda06ce63d440137bece8dc54051",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 24563,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 3,
+        "internalName": "BitrateGoster",
+        "description": "BitrateGoster - Oynat\u0131c\u0131 men\u00fcs\u00fc a\u00e7\u0131ld\u0131\u011f\u0131nda sol \u00fcst k\u00f6\u015fede videonun bitrate de\u011ferini g\u00f6sterir. Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/BitrateGoster.cs3",
+        "name": "BitrateGoster"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png",
+        "fileHash": "sha256-10c8c40d5eb7848d79a78b4f3300f7dbaa3094ab227ae8999065349bc111f234",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 28085,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 3,
+        "internalName": "FragmanIzle",
+        "description": "FragmanIzle - Film ve dizi detay sayfas\u0131nda 'Oynat' butonunun yan\u0131na/alt\u0131na '\ud83c\udfac Fragman' butonu ekler (T\u00fcrk\u00e7e fragman \u00f6ncelikli, uygulama i\u00e7i pencere veya YouTube/SmartTube deste\u011fi). Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/FragmanIzle.cs3",
+        "name": "FragmanIzle"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_gosterge.png",
+        "fileHash": "sha256-53e5658878e1299a0efa4098695b4dc6e26e0ff64fa39a5806e6e0076c5b369a",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 20386,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 5,
+        "internalName": "Gosterge",
+        "description": "G\u00f6sterge - Sol altta h\u0131za g\u00f6re ger\u00e7ek kalan s\u00fcre, sa\u011f altta biti\u015f saati. Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/Gosterge.cs3",
+        "name": "Gosterge"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png",
+        "fileHash": "sha256-fa84de6034793ecaebbb1c3fce3c6ab202b1a0c95861fc676bab214fd6790bbf",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 28435,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 3,
+        "internalName": "IntroAtla",
+        "description": "IntroAtla - Dizi ve animelerde IntroDB/AniSkip API verisi varsa introyu otomatik atlar (yedek buton kapal\u0131, API yoksa gizli). Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/IntroAtla.cs3",
+        "name": "IntroAtla"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_neizlesem.png",
+        "fileHash": "sha256-8a3d7ba1a70cf4bc28f105b58d71e7e3d0ce75c1e08ce136f6e579034ef28628",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 45068,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 2,
+        "internalName": "NeIzlesem",
+        "description": "Ne \u0130zlesem - Kategori ve IMDb puan\u0131na g\u00f6re y\u00fckl\u00fc sitelerinizden 3 s\u00fcrpriz film/dizi \u00f6nerir, se\u00e7ti\u011finizi direkt a\u00e7ar (Tam uyum i\u00e7in SupEren v2.0 temas\u0131n\u0131 etkinle\u015ftirin). Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/NeIzlesem.cs3",
+        "name": "Ne İzlesem"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_senkron.png",
+        "fileHash": "sha256-5f364878926f0b0438a7f7ef7edb74e8164832ef920983556a9d9c712acc80bc",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 35289,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 6,
+        "internalName": "Senkron",
+        "description": "Senkron - Kald\u0131\u011f\u0131n yerden izlemeyi cihazlar aras\u0131nda otomatik e\u015fitler. Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/Senkron.cs3",
+        "name": "Senkron"
+    },
+    {
+        "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_tema.png",
+        "fileHash": "sha256-8807b84025fe5acc9bbf2ad9b9c7a3d769ab3457b92a0db7fd74e568c1888615",
+        "apiVersion": 1,
+        "repositoryUrl": "https://github.com/gokberkeren46-creator/SupEren.Dev",
+        "fileSize": 39767,
+        "status": 1,
+        "language": "tr",
+        "authors": [
+            "gokberkeren46-creator"
+        ],
+        "tvTypes": [
+            "All"
+        ],
+        "version": 6,
+        "internalName": "SupErenTema",
+        "description": "SupEren v2.0 - Tablet ve TV uyumlu Y\u00fczen Alt Men\u00fc (boyut/koyuluk ayarl\u0131, TV'de en solda \u25c0 veya Geri ile a\u00e7\u0131l\u0131r) ve 12 Vurgu Rengi. Kaynak kodlar \u00fccretsiz olarak payla\u015f\u0131lm\u0131\u015ft\u0131r, \u00f6zel destek isterseniz \u00fccretli verilecektir. insta=gokberkerenn. \u00dccretsiz dan\u0131\u015fmanl\u0131k i\u00e7in l\u00fctfen rahats\u0131z etmeyin \u203c\ufe0f",
+        "url": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/builds/SupErenTema.cs3",
+        "name": "SupEren v2.0"
+    }
+]

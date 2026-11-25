@@ -39,10 +39,16 @@ class TemaPrefs(context: Context) {
         val PRESETS = listOf(
             AccentPreset("indigo", "İndigo", 0xFF6366F1.toInt(), 0xFF818CF8.toInt()),
             AccentPreset("blue", "Mavi", 0xFF0EA5E9.toInt(), 0xFF38BDF8.toInt()),
+            AccentPreset("cyan", "Turkuaz", 0xFF06B6D4.toInt(), 0xFF22D3EE.toInt()),
             AccentPreset("emerald", "Zümrüt", 0xFF10B981.toInt(), 0xFF34D399.toInt()),
+            AccentPreset("lime", "Fıstık", 0xFF65A30D.toInt(), 0xFF84CC16.toInt()),
+            AccentPreset("gold", "Altın", 0xFFF59E0B.toInt(), 0xFFFBBF24.toInt()),
+            AccentPreset("orange", "Turuncu", 0xFFF97316.toInt(), 0xFFFB923C.toInt()),
             AccentPreset("red", "Kırmızı", 0xFFEF4444.toInt(), 0xFFF87171.toInt()),
+            AccentPreset("crimson", "Bordo", 0xFFBE123C.toInt(), 0xFFE11D48.toInt()),
+            AccentPreset("pink", "Pembe", 0xFFEC4899.toInt(), 0xFFF472B6.toInt()),
             AccentPreset("purple", "Mor", 0xFFA855F7.toInt(), 0xFFC084FC.toInt()),
-            AccentPreset("gold", "Altın", 0xFFF59E0B.toInt(), 0xFFFBBF24.toInt())
+            AccentPreset("slate", "Grafit", 0xFF475569.toInt(), 0xFF64748B.toInt())
         )
 
         val SCALES = listOf(

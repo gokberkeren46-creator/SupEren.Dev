@@ -26,7 +26,7 @@ fun encodeB64(value: String): String =
     if (value.isNotEmpty()) Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) else ""
 
 cloudstream {
-    description = "Senkron - Kaldığın yerden izlemeyi cihazlar arasında otomatik eşitler. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir."
+    description = "Senkron - Kaldığın yerden izlemeyi cihazlar arasında otomatik eşitler. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

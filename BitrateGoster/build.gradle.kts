@@ -1,7 +1,7 @@
-version = 1
+version = 2
 
 cloudstream {
-    description = "BitrateGoster - Oynatıcıyı duraklattığınızda sol üst köşede videonun bitrate değerini gösterir. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir."
+    description = "BitrateGoster - Oynatıcı menüsü açıldığında sol üst köşede videonun bitrate değerini gösterir. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

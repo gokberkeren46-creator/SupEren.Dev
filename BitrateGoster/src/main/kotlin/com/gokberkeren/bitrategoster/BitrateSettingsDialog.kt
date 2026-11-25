@@ -93,7 +93,7 @@ object BitrateSettingsDialog {
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitle = TextView(context).apply {
-            text = "SupEren.Dev • Sadece duraklatınca sol üstte bitrate"
+            text = "SupEren.Dev • Oynatıcı menüsü açıkken sol üstte bitrate"
             textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setPadding(0, 0, 0, dp(10))

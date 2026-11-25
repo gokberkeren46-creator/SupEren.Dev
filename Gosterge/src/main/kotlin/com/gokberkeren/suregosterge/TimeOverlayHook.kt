@@ -169,6 +169,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
+            elevation = 999f
             isClickable = false
             isFocusable = false
             visibility = if (prefs.enabled) View.VISIBLE else View.GONE
@@ -202,6 +203,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         )
 
         container.addView(root)
+        root.bringToFront()
         hostParent = container
         overlayRoot = root
         leftLabel = left
@@ -234,11 +236,13 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         }
 
         val isPaused = fragment.currentPlayerStatus == CSPlayerLoading.IsPaused
+        val isHudShowing = isControllerShowing(fragment)
         val inInitialWindow = position < INITIAL_SHOW_MS
         val inPeriodicWindow = (position % PERIODIC_INTERVAL_MS) < PERIODIC_SHOW_MS
-        val shouldShow = isPaused || inInitialWindow || inPeriodicWindow
+        val shouldShow = isPaused || isHudShowing || inInitialWindow || inPeriodicWindow
 
         if (shouldShow) {
+            overlayRoot?.bringToFront()
             val remainingRawMs = (duration - position).coerceAtLeast(0L)
             val speed = player.getPlaybackSpeed().coerceIn(0.25f, 4.0f)
             val realRemainingMs = (remainingRawMs / speed).toLong()
@@ -301,8 +305,32 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
         isCurrentlyShown = false
     }
 
+    private fun isControllerShowing(fragment: AbstractPlayerFragment<*>): Boolean {
+        // 1. Check FullScreenPlayer.isShowing() via reflection (works on both Phone/Tablet & Android TV)
+        var cur: Class<*>? = fragment.javaClass
+        while (cur != null) {
+            try {
+                val m = cur.getDeclaredMethod("isShowing")
+                m.isAccessible = true
+                if (m.invoke(fragment) == true) return true
+                break
+            } catch (_: NoSuchMethodException) {
+                cur = cur.superclass
+            } catch (_: Throwable) {
+                break
+            }
+        }
+        // 2. Fallback: check if playerPausePlay control button is currently visible
+        return try {
+            val btn = fragment.playerPausePlay
+            btn != null && btn.isShown && btn.alpha > 0.1f
+        } catch (_: Throwable) {
+            false
+        }
+    }
+
     companion object {
-        private const val UPDATE_INTERVAL_MS = 2_000L
+        private const val UPDATE_INTERVAL_MS = 500L
         private const val INITIAL_SHOW_MS = 1L * 60_000L       // İlk 1 dakika
         private const val PERIODIC_INTERVAL_MS = 10L * 60_000L // Her 10 dakikada bir
         private const val PERIODIC_SHOW_MS = 30_000L           // 30 saniye görünür

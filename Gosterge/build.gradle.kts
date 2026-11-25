@@ -1,4 +1,4 @@
-version = 3
+version = 4
 
 cloudstream {
     description = "Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati."

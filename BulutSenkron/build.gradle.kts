@@ -1,0 +1,55 @@
+import java.util.Base64
+import java.util.Properties
+
+version = 1
+
+val localProps = Properties().apply {
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+val privateFirebaseUrl: String = (
+    System.getenv("FIREBASE_URL")?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("firebase.url")?.takeIf { it.isNotBlank() }
+        ?: ""
+).trim().trimEnd('/')
+
+val privateShortCode: String = (
+    System.getenv("SHORT_CODE")?.takeIf { it.isNotBlank() }
+        ?: localProps.getProperty("firebase.shortcode")?.takeIf { it.isNotBlank() }
+        ?: ""
+).trim()
+
+fun encodeB64(value: String): String =
+    if (value.isNotEmpty()) Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) else ""
+
+cloudstream {
+    description = "BulutSenkron - Kaldığın yerden izleme ve arama geçmişini cihazlar arasında eşitler."
+    authors = listOf("gokberkeren46-creator")
+    status = 1
+    tvTypes = listOf("All")
+    requiresResources = false
+    language = "tr"
+    iconUrl = "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon_senkron.png"
+}
+
+dependencies {
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
+    compileOnly("androidx.fragment:fragment-ktx:1.8.5")
+    compileOnly("androidx.appcompat:appcompat:1.7.0")
+}
+
+android {
+    namespace = "com.gokberkeren.bulutsenkron"
+
+    defaultConfig {
+        buildConfigField("String", "PRIVATE_FIREBASE_URL_B64", "\"${encodeB64(privateFirebaseUrl)}\"")
+        buildConfigField("String", "PRIVATE_SHORT_CODE_B64", "\"${encodeB64(privateShortCode)}\"")
+    }
+
+    buildFeatures {
+        buildConfig = true
+    }
+}

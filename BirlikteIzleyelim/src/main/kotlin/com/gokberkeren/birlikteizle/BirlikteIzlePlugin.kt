@@ -40,6 +40,14 @@ class BirlikteIzlePlugin : Plugin() {
         Log.i(TAG, "Birlikteİzleyelim loaded (clientId=${manager.clientId})")
     }
 
+    override fun beforeUnload() {
+        roomManager?.leaveRoom()
+        playerHook?.unregister()
+        roomManager = null
+        playerHook = null
+        Log.i(TAG, "Birlikteİzleyelim unloaded")
+    }
+
     private fun decodeB64(b64: String): String {
         if (b64.isBlank()) return ""
         return try {

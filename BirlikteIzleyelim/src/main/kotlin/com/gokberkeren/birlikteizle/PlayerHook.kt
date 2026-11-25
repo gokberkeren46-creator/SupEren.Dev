@@ -117,9 +117,24 @@ class PlayerHook(private val roomManager: RoomManager) {
         }
     }
 
+    private var registeredApp: Application? = null
+
     fun register(application: Application, initialActivity: Activity?) {
+        registeredApp = application
         application.registerActivityLifecycleCallbacks(activityCallbacks)
         (initialActivity as? FragmentActivity)?.let { attachToActivity(it) }
+    }
+
+    fun unregister() {
+        registeredApp?.let {
+            try { it.unregisterActivityLifecycleCallbacks(activityCallbacks) } catch (_: Throwable) {}
+        }
+        registeredApp = null
+        for (act in registeredActivities.toList()) {
+            try { act.supportFragmentManager.unregisterFragmentLifecycleCallbacks(fragmentCallbacks) } catch (_: Throwable) {}
+        }
+        registeredActivities.clear()
+        detachFromPlayer()
     }
 
     fun currentActivity(): FragmentActivity? = currentActivityRef?.get()?.takeIf {

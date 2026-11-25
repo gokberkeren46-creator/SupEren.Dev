@@ -44,9 +44,9 @@ class SyncPrefs(
         val input = serverInput
         return when {
             isUsingPrivateShortCode() ->
-                "${privateFirebaseUrl.trimEnd('/')}/$privateShortCode/rooms/$pin/cloudsync.json"
+                "${privateFirebaseUrl.trimEnd('/')}/$privateShortCode/rooms/$pin/cloudsync_v5.json"
             input.startsWith("https://", ignoreCase = true) || input.startsWith("http://", ignoreCase = true) ->
-                "${input.trimEnd('/')}/rooms/$pin/cloudsync.json"
+                "${input.trimEnd('/')}/rooms/$pin/cloudsync_v5.json"
             else -> null
         }
     }

@@ -33,7 +33,13 @@ class BulutSenkronPlugin : Plugin() {
             SyncDialog.show(targetCtx, prefs, syncEngine)
         }
 
-        Log.i(TAG, "BulutSenkron loaded")
+        Log.i(TAG, "Senkron loaded")
+    }
+
+    override fun beforeUnload() {
+        engine?.unregister()
+        engine = null
+        Log.i(TAG, "Senkron unloaded")
     }
 
     private fun decodeB64(b64: String): String {

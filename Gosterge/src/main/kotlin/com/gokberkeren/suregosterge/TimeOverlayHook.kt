@@ -41,6 +41,7 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
     private val registeredActivities = Collections.newSetFromMap(WeakHashMap<FragmentActivity, Boolean>())
     private val clockFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
 
+    private var registeredApp: Application? = null
     private var currentActivityRef: WeakReference<FragmentActivity>? = null
     private var activeFragmentRef: WeakReference<AbstractPlayerFragment<*>>? = null
     private var hostParent: ViewGroup? = null
@@ -51,8 +52,21 @@ class TimeOverlayHook(private val prefs: SurePrefs) {
     private var isCurrentlyShown: Boolean = false
 
     fun register(application: Application, initialActivity: Activity?) {
+        registeredApp = application
         application.registerActivityLifecycleCallbacks(activityCallbacks)
         (initialActivity as? FragmentActivity)?.let { attachToActivity(it) }
+    }
+
+    fun unregister() {
+        registeredApp?.let {
+            try { it.unregisterActivityLifecycleCallbacks(activityCallbacks) } catch (_: Throwable) {}
+        }
+        registeredApp = null
+        for (act in registeredActivities.toList()) {
+            try { act.supportFragmentManager.unregisterFragmentLifecycleCallbacks(fragmentCallbacks) } catch (_: Throwable) {}
+        }
+        registeredActivities.clear()
+        detachFromPlayer()
     }
 
     fun currentActivity(): FragmentActivity? = currentActivityRef?.get()?.takeIf {

@@ -32,7 +32,13 @@ class SureGostergePlugin : Plugin() {
             }
         }
 
-        Log.i(TAG, "SureGosterge loaded")
+        Log.i(TAG, "Gosterge loaded")
+    }
+
+    override fun beforeUnload() {
+        hook?.unregister()
+        hook = null
+        Log.i(TAG, "Gosterge unloaded")
     }
 
     companion object {

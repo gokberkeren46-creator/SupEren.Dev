@@ -8,7 +8,6 @@ import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.view.Gravity
-import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -17,7 +16,7 @@ import android.widget.TextView
 import kotlin.math.min
 
 /**
- * Compact dark settings dialog for SupEren v2.0 (size, opacity, accent color; TV mode aware).
+ * Compact dark settings dialog for SupEren v2.0 (size, opacity, accent color on both Tablet & TV).
  */
 object TemaSettingsDialog {
 
@@ -95,7 +94,7 @@ object TemaSettingsDialog {
         }
         val subtitle = TextView(context).apply {
             text = if (isTv) {
-                "SupEren.Dev • TV Modu (Yalnızca Kumanda Odak Rengi)"
+                "SupEren.Dev • TV Otomatik Alt Menü (◀ / ▼ / Geri) & Vurgu Rengi"
             } else {
                 "SupEren.Dev • Yüzen Alt Menü & Vurgu Rengi"
             }
@@ -122,7 +121,7 @@ object TemaSettingsDialog {
 
         fun refreshToggle() {
             if (prefs.enabled) {
-                toggleBtn.text = if (isTv) "● Odak Rengi Açık" else "● Tema & Alt Menü Açık"
+                toggleBtn.text = "● Tema & Alt Menü Açık"
                 toggleBtn.background = focusableBtn(COLOR_ONLINE, 0xFF4ADE80.toInt())
             } else {
                 toggleBtn.text = "○ Tema Kapalı (Açmak için bas)"
@@ -136,13 +135,7 @@ object TemaSettingsDialog {
             onChanged()
         }
 
-        // Size & Opacity cards (shown on Phone/Tablet only; hidden in TV mode)
-        val dockStyleBox = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            visibility = if (isTv) View.GONE else View.VISIBLE
-        }
-
-        // 1. Scale card
+        // 1. Scale card (available on both Tablet & TV!)
         val scaleCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -169,7 +162,7 @@ object TemaSettingsDialog {
         fun refreshScales() {
             scaleBtns.forEach { (preset, btn) ->
                 val sel = preset.key == prefs.scaleKey
-                btn.background = if (sel) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS)
+                btn.background = if (sel) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS, selectedBorder = true)
                 else focusableBtn(COLOR_MUTED, COLOR_MUTED_FOCUS)
             }
         }
@@ -185,7 +178,7 @@ object TemaSettingsDialog {
         scaleCard.addView(scaleLabel)
         scaleCard.addView(scaleRow)
 
-        // 2. Opacity card
+        // 2. Opacity card (available on both Tablet & TV!)
         val opacityCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -212,7 +205,7 @@ object TemaSettingsDialog {
         fun refreshOpacities() {
             opacityBtns.forEach { (preset, btn) ->
                 val sel = preset.key == prefs.opacityKey
-                btn.background = if (sel) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS)
+                btn.background = if (sel) focusableBtn(COLOR_PRIMARY, COLOR_PRIMARY_FOCUS, selectedBorder = true)
                 else focusableBtn(COLOR_MUTED, COLOR_MUTED_FOCUS)
             }
         }
@@ -228,10 +221,7 @@ object TemaSettingsDialog {
         opacityCard.addView(opacityLabel)
         opacityCard.addView(opacityRow)
 
-        dockStyleBox.addView(scaleCard)
-        dockStyleBox.addView(opacityCard)
-
-        // 3. Accent color picker (both Tablet & TV)
+        // 3. Accent color picker
         val colorCard = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             background = cardDrawable()
@@ -316,7 +306,8 @@ object TemaSettingsDialog {
         root.addView(title)
         root.addView(subtitle)
         root.addView(toggleBtn)
-        root.addView(dockStyleBox)
+        root.addView(scaleCard)
+        root.addView(opacityCard)
         root.addView(colorCard)
         root.addView(closeBtn)
 
@@ -326,7 +317,8 @@ object TemaSettingsDialog {
         closeBtn.setOnClickListener { dialog.dismiss() }
         dialog.show()
 
-        val targetWidth = min(dp(330), (dm.widthPixels * 0.80f).toInt())
+        val targetWidth = min(dp(335), (dm.widthPixels * 0.80f).toInt())
         dialog.window?.setLayout(targetWidth, WindowManager.LayoutParams.WRAP_CONTENT)
+        toggleBtn.requestFocus()
     }
 }

@@ -1,7 +1,7 @@
-version = 2
+version = 3
 
 cloudstream {
-    description = "SupEren v2.0 - Yüzen Alt Menü (boyut/opaklık ayarlı) ve 6 Vurgu Rengi (TV'de yalnızca kumanda odak rengi)."
+    description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de kumandayla otomatik açılır) ve 6 Vurgu Rengi."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

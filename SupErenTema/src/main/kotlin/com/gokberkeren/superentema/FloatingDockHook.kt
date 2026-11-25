@@ -1,5 +1,6 @@
 package com.gokberkeren.superentema
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.Application
 import android.app.UiModeManager
@@ -15,14 +16,20 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.view.FocusFinder
 import android.view.Gravity
+import android.view.KeyEvent
 import android.view.Menu
 import android.view.View
 import android.view.ViewGroup
+import android.view.Window
+import android.widget.AbsSeekBar
+import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import androidx.fragment.app.DialogFragment
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
@@ -33,16 +40,20 @@ import java.util.Collections
 import java.util.WeakHashMap
 
 /**
- * SupEren v2.0 layout & accent hook:
- *  - Phone / Tablet mode: replaces left rail / classic bottom bar with a resizable, rich-opacity Floating Dock.
- *  - TV / Emulator mode: automatically leaves native left rail untouched (zero black strip or D-Pad dead-end)
- *    and applies only the selected Accent Color to CloudStream's TV focusOutline.
+ * SupEren v2.0 (v3) layout & accent hook:
+ *  - Tablet / Phone: Always-visible Floating Bottom Dock on non-fullscreen screens (live fragment scan, never stuck hidden).
+ *  - Android TV: Full-screen edge-to-edge (zeros nav_host_fragment 72dp start margin so no black strip),
+ *    auto-hidden while browsing posters, pops up smoothly via remote:
+ *      1) Left (◀) at leftmost item,
+ *      2) Down (▼) at bottommost row,
+ *      3) Back on the 5 root tabs (2nd Back triggers normal CloudStream exit/back).
  */
 class FloatingDockHook(private val prefs: TemaPrefs) {
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var registeredApp: Application? = null
     private val registeredActivities = Collections.newSetFromMap(WeakHashMap<FragmentActivity, Boolean>())
+    private val wrappedWindows = WeakHashMap<FragmentActivity, DockWindowCallback>()
     private var currentActivityRef: WeakReference<FragmentActivity>? = null
 
     private var dockHost: ViewGroup? = null
@@ -50,7 +61,9 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     private var dockPill: LinearLayout? = null
     private var navRailRef: WeakReference<View>? = null
     private var navBottomRef: WeakReference<View>? = null
+    private var navHostRef: WeakReference<View>? = null
     private var focusOutlineRef: WeakReference<ImageView>? = null
+    private var lastContentFocusRef: WeakReference<View>? = null
 
     private var navItems: List<DockItem> = emptyList()
     private val tabViews = mutableMapOf<Int, TabViewHolder>()
@@ -63,16 +76,35 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     private var selectedItemId: Int = -1
 
     @Volatile
-    private var hideForFullscreen: Boolean = false
+    private var focusedDockItemId: Int = -1
+
+    @Volatile
+    private var tvDockVisible: Boolean = false
 
     private var origRailVisibility: Int? = null
     private var origBottomVisibility: Int? = null
+    private var origHostMarginStart: Int? = null
+
+    private val hostLayoutGuard = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+        if (unloaded || !prefs.enabled) return@OnLayoutChangeListener
+        val act = currentActivity() ?: return@OnLayoutChangeListener
+        if (!isFullscreenActive(act)) {
+            zeroHostStartMargin(v)
+        }
+    }
+
+    private val railVisibilityGuard = View.OnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+        if (unloaded || !prefs.enabled) return@OnLayoutChangeListener
+        if (v.visibility != View.GONE) {
+            v.visibility = View.GONE
+        }
+    }
 
     private val enforceRunnable = object : Runnable {
         override fun run() {
             if (unloaded) return
             enforceState()
-            mainHandler.postDelayed(this, 600L)
+            mainHandler.postDelayed(this, 450L)
         }
     }
 
@@ -80,7 +112,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         registeredApp = application
         application.registerActivityLifecycleCallbacks(activityCallbacks)
         (initialActivity as? FragmentActivity)?.let { attachToActivity(it) }
-        mainHandler.postDelayed(enforceRunnable, 400L)
+        mainHandler.postDelayed(enforceRunnable, 300L)
     }
 
     fun unregister() {
@@ -93,8 +125,10 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         mainHandler.post {
             for (act in registeredActivities.toList()) {
                 try { act.supportFragmentManager.unregisterFragmentLifecycleCallbacks(fragmentCallbacks) } catch (_: Throwable) {}
+                unwrapWindowCallback(act)
             }
             registeredActivities.clear()
+            wrappedWindows.clear()
             restoreNativeNav()
             detachDock()
         }
@@ -119,12 +153,12 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             if (unloaded) return@post
             val act = currentActivity()
             if (!prefs.enabled) {
+                tvDockVisible = false
                 restoreNativeNav()
                 dockOverlay?.visibility = View.GONE
                 return@post
             }
             if (act != null) {
-                // Rebuild dock if scale changed
                 if (dockOverlay != null && builtScaleKey != prefs.scaleKey) {
                     detachDock()
                 }
@@ -142,8 +176,27 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             activity.supportFragmentManager.registerFragmentLifecycleCallbacks(fragmentCallbacks, true)
         }
         if (activity.javaClass.name.contains("MainActivity")) {
+            wrapWindowCallback(activity)
             mainHandler.post { ensureAttached(activity) }
         }
+    }
+
+    private fun wrapWindowCallback(activity: FragmentActivity) {
+        val window = activity.window ?: return
+        val current = window.callback ?: return
+        if (current is DockWindowCallback) return
+        val wrapper = DockWindowCallback(current, activity)
+        window.callback = wrapper
+        wrappedWindows[activity] = wrapper
+    }
+
+    private fun unwrapWindowCallback(activity: FragmentActivity) {
+        val window = activity.window ?: return
+        val current = window.callback
+        if (current is DockWindowCallback) {
+            window.callback = current.base
+        }
+        wrappedWindows.remove(activity)
     }
 
     private fun ensureAttached(activity: FragmentActivity) {
@@ -152,44 +205,53 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
         val rail = findViewByEntryName(content, "nav_rail_view")
         val bottom = findViewByEntryName(content, "nav_view")
+        val navHost = findViewByEntryName(content, "nav_host_fragment")
         val outline = findViewByEntryName(content, "focus_outline") as? ImageView
-        val homeRoot = findViewByEntryName(content, "home_root") as? ViewGroup ?: content
 
         if (outline != null) {
             focusOutlineRef = WeakReference(outline)
         }
-
-        // TV MODE: Never hide left rail or attach floating dock; only tint focus_outline!
-        if (isTvMode(activity)) {
-            detachDock()
-            restoreNativeNav(keepFocusTint = true)
-            applyTvFocusTint()
-            return
-        }
-
         if (rail != null && navRailRef?.get() !== rail) {
+            navRailRef?.get()?.removeOnLayoutChangeListener(railVisibilityGuard)
             navRailRef = WeakReference(rail)
             if (origRailVisibility == null) origRailVisibility = rail.visibility
+            rail.addOnLayoutChangeListener(railVisibilityGuard)
         }
         if (bottom != null && navBottomRef?.get() !== bottom) {
             navBottomRef = WeakReference(bottom)
             if (origBottomVisibility == null) origBottomVisibility = bottom.visibility
+        }
+        if (navHost != null && navHostRef?.get() !== navHost) {
+            navHostRef?.get()?.removeOnLayoutChangeListener(hostLayoutGuard)
+            navHostRef = WeakReference(navHost)
+            val lp = navHost.layoutParams as? ViewGroup.MarginLayoutParams
+            if (lp != null && lp.marginStart > 0 && origHostMarginStart == null) {
+                origHostMarginStart = lp.marginStart
+            }
+            navHost.addOnLayoutChangeListener(hostLayoutGuard)
         }
 
         val sourceNav = rail ?: bottom ?: return
         val extracted = extractMenuItems(sourceNav)
         if (extracted.isEmpty()) return
 
-        if (dockHost === homeRoot && dockOverlay != null &&
-            navItems.size == extracted.size && builtScaleKey == prefs.scaleKey
+        val existingOverlay = dockOverlay
+        if (dockHost === content &&
+            existingOverlay != null &&
+            existingOverlay.isAttachedToWindow &&
+            existingOverlay.parent === content &&
+            navItems.size == extracted.size &&
+            builtScaleKey == prefs.scaleKey
         ) {
             applyAccentAndStyle()
+            enforceState()
             return
         }
 
         navItems = extracted
         selectedItemId = readSelectedItemId(sourceNav) ?: extracted.first().id
-        buildDock(homeRoot)
+        if (focusedDockItemId == -1) focusedDockItemId = selectedItemId
+        buildDock(content)
         applyAccentAndStyle()
         enforceState()
     }
@@ -201,23 +263,26 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         val scale = prefs.currentScale().factor
         builtScaleKey = prefs.scaleKey
         fun sdp(v: Float): Int = (v * d * scale).toInt()
-        fun dp(v: Int): Int = (v * d).toInt()
+        fun dp(v: Float): Int = (v * d).toInt()
 
         val overlay = FrameLayout(ctx).apply {
-            layoutParams = ViewGroup.LayoutParams(
+            layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT
             )
-            elevation = 990f
+            elevation = dp(120f).toFloat()
+            translationZ = dp(120f).toFloat()
             isClickable = false
             isFocusable = false
+            descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         }
 
         val pill = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(sdp(10f), sdp(7f), sdp(10f), sdp(7f))
-            elevation = dp(16).toFloat()
+            elevation = dp(24f).toFloat()
+            translationZ = dp(24f).toFloat()
         }
 
         tabViews.clear()
@@ -225,8 +290,10 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             val tab = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
+                tag = "tv_no_focus_tag" // Hides CloudStream TV square focus_outline on rounded pill
                 isClickable = true
                 isFocusable = true
+                isFocusableInTouchMode = false
                 setPadding(sdp(13f), sdp(9f), sdp(13f), sdp(9f))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
@@ -234,6 +301,20 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 ).apply {
                     marginStart = sdp(3f)
                     marginEnd = sdp(3f)
+                }
+                setOnFocusChangeListener { _, hasFocus ->
+                    if (hasFocus) {
+                        focusedDockItemId = item.id
+                        applyAccentAndStyle()
+                    } else if (tvDockVisible) {
+                        mainHandler.post {
+                            if (tvDockVisible && dockPill?.hasFocus() != true) {
+                                closeTvDock(restoreFocus = false)
+                            } else {
+                                applyAccentAndStyle()
+                            }
+                        }
+                    }
                 }
             }
 
@@ -258,7 +339,12 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             tab.addView(titleView)
 
             tab.setOnClickListener {
-                selectTab(item.id)
+                if (isTvMode(ctx)) {
+                    focusedDockItemId = item.id
+                    activateFocusedDockTab()
+                } else {
+                    selectTab(item.id)
+                }
             }
 
             pill.addView(tab)
@@ -272,9 +358,13 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             ).apply {
-                bottomMargin = dp(16)
+                bottomMargin = dp(18f)
             }
         )
+
+        if (isTvMode(ctx) && !tvDockVisible) {
+            overlay.visibility = View.GONE
+        }
 
         container.addView(overlay)
         overlay.bringToFront()
@@ -285,13 +375,100 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     private fun selectTab(itemId: Int) {
         selectedItemId = itemId
+        focusedDockItemId = itemId
         applyAccentAndStyle()
-        val targetNav = navBottomRef?.get() ?: navRailRef?.get() ?: return
+        val act = currentActivity()
+        val isLand = act?.resources?.configuration?.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val targetNav = (if (isLand == true) navRailRef?.get() else navBottomRef?.get())
+            ?: navRailRef?.get()
+            ?: navBottomRef?.get()
+            ?: return
         try {
             val setter = targetNav.javaClass.getMethod("setSelectedItemId", Int::class.javaPrimitiveType)
             setter.invoke(targetNav, itemId)
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to switch tab $itemId", t)
+        }
+    }
+
+    private fun openTvDock(fromFocus: View?) {
+        val overlay = dockOverlay ?: return
+        val pill = dockPill ?: return
+        if (fromFocus != null && !isDescendantOf(fromFocus, overlay)) {
+            lastContentFocusRef = WeakReference(fromFocus)
+        }
+        tvDockVisible = true
+        focusedDockItemId = selectedItemId.takeIf { tabViews.containsKey(it) }
+            ?: navItems.firstOrNull()?.id
+            ?: -1
+
+        overlay.visibility = View.VISIBLE
+        overlay.bringToFront()
+        applyAccentAndStyle()
+
+        val d = pill.resources.displayMetrics.density
+        pill.animate().cancel()
+        pill.translationY = 26f * d
+        pill.alpha = 0f
+        pill.animate()
+            .translationY(0f)
+            .alpha(1f)
+            .setDuration(150L)
+            .start()
+
+        val targetTab = tabViews[focusedDockItemId]?.container ?: tabViews.values.firstOrNull()?.container
+        targetTab?.requestFocus()
+    }
+
+    private fun closeTvDock(restoreFocus: Boolean) {
+        if (!tvDockVisible && dockOverlay?.visibility != View.VISIBLE) return
+        tvDockVisible = false
+        val overlay = dockOverlay
+        dockPill?.animate()?.cancel()
+        overlay?.visibility = View.GONE
+        applyAccentAndStyle()
+
+        if (restoreFocus) {
+            val prev = lastContentFocusRef?.get()?.takeIf { it.isAttachedToWindow && it.isShown && it.isFocusable }
+            if (prev != null && prev.requestFocus()) {
+                return
+            }
+            focusFirstInHost()
+        }
+    }
+
+    private fun focusDockAdjacent(delta: Int) {
+        if (navItems.isEmpty()) return
+        val curIdx = navItems.indexOfFirst { it.id == focusedDockItemId }.let { if (it < 0) 0 else it }
+        val nextIdx = (curIdx + delta).coerceIn(0, navItems.lastIndex)
+        val nextId = navItems[nextIdx].id
+        focusedDockItemId = nextId
+        applyAccentAndStyle()
+        tabViews[nextId]?.container?.requestFocus()
+    }
+
+    private fun activateFocusedDockTab() {
+        val targetId = focusedDockItemId.takeIf { tabViews.containsKey(it) } ?: selectedItemId
+        val sameTab = (targetId == selectedItemId)
+        if (!sameTab) {
+            lastContentFocusRef = null
+            selectTab(targetId)
+        }
+        closeTvDock(restoreFocus = sameTab)
+        if (!sameTab) {
+            mainHandler.postDelayed({ focusFirstInHost() }, 180L)
+        }
+    }
+
+    private fun focusFirstInHost() {
+        val host = navHostRef?.get() as? ViewGroup ?: return
+        if (host.hasFocus()) return
+        val next = FocusFinder.getInstance().findNextFocus(host, null, View.FOCUS_DOWN)
+            ?: FocusFinder.getInstance().findNextFocus(host, null, View.FOCUS_RIGHT)
+        if (next != null) {
+            next.requestFocus()
+        } else {
+            host.requestFocus()
         }
     }
 
@@ -306,6 +483,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         val ctx = pill.context
         val d = ctx.resources.displayMetrics.density
         val scale = prefs.currentScale().factor
+        val tv = isTvMode(ctx)
         fun sdp(v: Float): Float = v * d * scale
         fun dp(v: Float): Int = (v * d).toInt()
 
@@ -320,14 +498,25 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
         tabViews.forEach { (id, holder) ->
             val isSelected = (id == selectedItemId)
+            val isTvFocused = tv && tvDockVisible && (id == focusedDockItemId)
+
             val normalBg = GradientDrawable().apply {
                 cornerRadius = sdp(22f)
-                setColor(if (isSelected) accent.color else Color.TRANSPARENT)
+                when {
+                    isTvFocused -> {
+                        setColor(accent.glowColor)
+                        setStroke(dp(2f).coerceAtLeast(2), Color.WHITE)
+                    }
+                    isSelected -> {
+                        setColor(if (tv && tvDockVisible) (accent.color and 0x00FFFFFF) or 0x66000000 else accent.color)
+                    }
+                    else -> setColor(Color.TRANSPARENT)
+                }
             }
             val pressedBg = GradientDrawable().apply {
                 cornerRadius = sdp(22f)
-                setColor(if (isSelected) accent.glowColor else 0x44FFFFFF)
-                setStroke(dp(1.5f).coerceAtLeast(1), Color.WHITE)
+                setColor(if (isSelected || isTvFocused) accent.glowColor else 0x44FFFFFF)
+                setStroke(dp(2f).coerceAtLeast(2), Color.WHITE)
             }
             holder.container.background = StateListDrawable().apply {
                 addState(intArrayOf(android.R.attr.state_focused), pressedBg)
@@ -335,53 +524,166 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 addState(intArrayOf(), normalBg)
             }
 
-            val fgColor = if (isSelected) Color.WHITE else 0xFFD0D9EC.toInt()
+            val showTitle = if (tv && tvDockVisible) (isTvFocused || isSelected) else isSelected
+            val fgColor = if (isSelected || isTvFocused) Color.WHITE else 0xFFD0D9EC.toInt()
             holder.icon.setColorFilter(fgColor, PorterDuff.Mode.SRC_IN)
             holder.title.setTextColor(fgColor)
-            holder.title.visibility = if (isSelected) View.VISIBLE else View.GONE
+            holder.title.visibility = if (showTitle) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun zeroHostStartMargin(hostView: View?) {
+        val v = hostView ?: return
+        val lp = v.layoutParams as? ViewGroup.MarginLayoutParams ?: return
+        if (lp.marginStart != 0) {
+            if (origHostMarginStart == null && lp.marginStart > 0) {
+                origHostMarginStart = lp.marginStart
+            }
+            lp.marginStart = 0
+            v.layoutParams = lp
         }
     }
 
     private fun enforceState() {
-        if (!prefs.enabled) return
-        val act = currentActivity()
+        if (unloaded || !prefs.enabled) return
+        val act = currentActivity() ?: return
+        if (!act.javaClass.name.contains("MainActivity")) return
 
-        if (isTvMode(act)) {
-            if (dockOverlay != null) {
-                detachDock()
-                restoreNativeNav(keepFocusTint = true)
-            }
-            applyTvFocusTint()
-            return
-        }
-
-        if (act != null && act.javaClass.name.contains("MainActivity") && dockOverlay == null) {
+        val content = act.findViewById<ViewGroup>(android.R.id.content) ?: return
+        val overlay = dockOverlay
+        if (overlay == null || !overlay.isAttachedToWindow || overlay.parent !== content || dockHost !== content) {
             ensureAttached(act)
         }
 
+        val fullscreen = isFullscreenActive(act)
         val rail = navRailRef?.get()
         val bottom = navBottomRef?.get()
+        val navHost = navHostRef?.get()
 
         if (rail != null && rail.visibility != View.GONE) rail.visibility = View.GONE
         if (bottom != null && bottom.visibility != View.GONE) bottom.visibility = View.GONE
+        if (!fullscreen) {
+            zeroHostStartMargin(navHost)
+        }
 
-        val liveSelected = readSelectedItemId(bottom ?: rail)
+        applyTvFocusTint()
+
+        val primaryNav = (if (act.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE) rail else bottom)
+            ?: rail
+            ?: bottom
+        val liveSelected = readSelectedItemId(primaryNav)
         if (liveSelected != null && liveSelected != selectedItemId && tabViews.containsKey(liveSelected)) {
             selectedItemId = liveSelected
+            if (!tvDockVisible) focusedDockItemId = liveSelected
             applyAccentAndStyle()
         }
 
-        val showDock = !hideForFullscreen
-        dockOverlay?.visibility = if (showDock) View.VISIBLE else View.GONE
-        if (showDock) dockOverlay?.bringToFront()
+        val currentOverlay = dockOverlay ?: return
+        if (isTvMode(act)) {
+            if (fullscreen && tvDockVisible) {
+                closeTvDock(restoreFocus = false)
+            }
+            val showTv = !fullscreen && tvDockVisible
+            currentOverlay.visibility = if (showTv) View.VISIBLE else View.GONE
+            if (showTv && content.indexOfChild(currentOverlay) != content.childCount - 1) {
+                currentOverlay.bringToFront()
+            }
+        } else {
+            val showTablet = !fullscreen
+            currentOverlay.visibility = if (showTablet) View.VISIBLE else View.GONE
+            if (showTablet && content.indexOfChild(currentOverlay) != content.childCount - 1) {
+                currentOverlay.bringToFront()
+            }
+        }
     }
 
-    private fun restoreNativeNav(keepFocusTint: Boolean = false) {
-        navRailRef?.get()?.let { it.visibility = origRailVisibility ?: View.VISIBLE }
-        navBottomRef?.get()?.let { it.visibility = origBottomVisibility ?: View.GONE }
-        if (!keepFocusTint) {
-            focusOutlineRef?.get()?.clearColorFilter()
+    /**
+     * Stateless live scan of currently visible fragments so the dock can NEVER get stuck hidden
+     * on Tablet or TV after closing dialogs, trailers, or sub-screens.
+     */
+    private fun isFullscreenActive(activity: FragmentActivity): Boolean {
+        return hasVisibleFullscreenFragment(activity.supportFragmentManager)
+    }
+
+    private fun hasVisibleFullscreenFragment(fm: FragmentManager): Boolean {
+        val list = try { fm.fragments } catch (_: Throwable) { return false }
+        for (f in list) {
+            if (f == null || !f.isAdded || f.isHidden) continue
+            if (f is DialogFragment) continue
+            val v = f.view
+            if (v != null && v.visibility == View.VISIBLE && v.isShown) {
+                val simple = f.javaClass.simpleName
+                if (f is AbstractPlayerFragment<*> ||
+                    simple.startsWith("ResultFragment") ||
+                    simple.startsWith("ResultTrailer") ||
+                    simple == "WebviewFragment" ||
+                    simple.startsWith("SetupFragment") ||
+                    simple == "EasterEggMonkeFragment"
+                ) {
+                    return true
+                }
+            }
+            val childFm = try { f.childFragmentManager } catch (_: Throwable) { null }
+            if (childFm != null && hasVisibleFullscreenFragment(childFm)) {
+                return true
+            }
         }
+        return false
+    }
+
+    /**
+     * Returns true ONLY when one of the 5 root tabs is currently displayed (not a Settings/Downloads sub-page),
+     * so pressing Back on Settings sub-pages still navigates up normally.
+     */
+    private fun isRootTabActive(activity: FragmentActivity): Boolean {
+        return hasVisibleRootTabFragment(activity.supportFragmentManager)
+    }
+
+    private fun hasVisibleRootTabFragment(fm: FragmentManager): Boolean {
+        val list = try { fm.fragments } catch (_: Throwable) { return false }
+        for (f in list) {
+            if (f == null || !f.isAdded || f.isHidden || f is DialogFragment) continue
+            val simple = f.javaClass.simpleName
+            val v = f.view
+            if (v != null && v.visibility == View.VISIBLE && v.isShown) {
+                if (simple == "HomeFragment" ||
+                    simple == "SearchFragment" ||
+                    simple == "LibraryFragment" ||
+                    simple == "DownloadFragment" ||
+                    simple == "SettingsFragment" ||
+                    simple == "SettingsFragment2"
+                ) {
+                    return true
+                }
+            }
+            val childFm = try { f.childFragmentManager } catch (_: Throwable) { null }
+            if (childFm != null && hasVisibleRootTabFragment(childFm)) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private fun restoreNativeNav() {
+        navRailRef?.get()?.let {
+            it.removeOnLayoutChangeListener(railVisibilityGuard)
+            it.visibility = origRailVisibility ?: View.VISIBLE
+        }
+        navBottomRef?.get()?.let {
+            it.visibility = origBottomVisibility ?: View.GONE
+        }
+        navHostRef?.get()?.let { host ->
+            host.removeOnLayoutChangeListener(hostLayoutGuard)
+            val orig = origHostMarginStart
+            if (orig != null) {
+                val lp = host.layoutParams as? ViewGroup.MarginLayoutParams
+                if (lp != null) {
+                    lp.marginStart = orig
+                    host.layoutParams = lp
+                }
+            }
+        }
+        focusOutlineRef?.get()?.clearColorFilter()
     }
 
     private fun detachDock() {
@@ -395,6 +697,164 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         dockPill = null
         tabViews.clear()
         builtScaleKey = ""
+        tvDockVisible = false
+    }
+
+    private fun isDescendantOf(view: View?, ancestor: ViewGroup?): Boolean {
+        if (view == null || ancestor == null) return false
+        var cur: Any? = view
+        while (cur is View) {
+            if (cur === ancestor) return true
+            cur = cur.parent
+        }
+        return false
+    }
+
+    private fun canAncestorScroll(view: View, stopAt: ViewGroup, horizontal: Boolean, dir: Int): Boolean {
+        var cur: Any? = view
+        while (cur is View && cur !== stopAt) {
+            val scrolled = if (horizontal) cur.canScrollHorizontally(dir) else cur.canScrollVertically(dir)
+            if (scrolled) return true
+            cur = cur.parent
+        }
+        return false
+    }
+
+    @SuppressLint("NewApi")
+    private inner class DockWindowCallback(
+        val base: Window.Callback,
+        private val activity: FragmentActivity
+    ) : Window.Callback by base {
+
+        private var consumedKeyUpCode: Int = -1
+
+        override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+            if (unloaded || !prefs.enabled || !isTvMode(activity)) {
+                return base.dispatchKeyEvent(event)
+            }
+            if (isFullscreenActive(activity)) {
+                if (tvDockVisible) closeTvDock(restoreFocus = false)
+                return base.dispatchKeyEvent(event)
+            }
+
+            if (dockOverlay == null || dockOverlay?.isAttachedToWindow != true) {
+                ensureAttached(activity)
+            }
+            if (navItems.isEmpty()) {
+                return base.dispatchKeyEvent(event)
+            }
+
+            val keyCode = event.keyCode
+            val action = event.action
+
+            // Consume matching ACTION_UP for keys we handled on ACTION_DOWN
+            if (action == KeyEvent.ACTION_UP && keyCode == consumedKeyUpCode) {
+                consumedKeyUpCode = -1
+                return true
+            }
+
+            // 1. DOCK IS CURRENTLY OPEN ON TV
+            if (tvDockVisible) {
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (action == KeyEvent.ACTION_DOWN) focusDockAdjacent(-1)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        if (action == KeyEvent.ACTION_DOWN) focusDockAdjacent(+1)
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_UP -> {
+                        if (action == KeyEvent.ACTION_DOWN) {
+                            consumedKeyUpCode = keyCode
+                            closeTvDock(restoreFocus = true)
+                        }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                        if (action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                            consumedKeyUpCode = keyCode
+                            activateFocusedDockTab()
+                        }
+                        return true
+                    }
+                    KeyEvent.KEYCODE_BACK,
+                    KeyEvent.KEYCODE_ESCAPE -> {
+                        // 2nd Back while dock is open: let CloudStream run its native Back/Exit dialog,
+                        // keeping dock focus during dispatch so HomeFragment triggers exit confirmation cleanly!
+                        val res = base.dispatchKeyEvent(event)
+                        if (action == KeyEvent.ACTION_UP) {
+                            mainHandler.post { closeTvDock(restoreFocus = false) }
+                        }
+                        return res
+                    }
+                }
+                return base.dispatchKeyEvent(event)
+            }
+
+            // 2. DOCK IS HIDDEN ON TV — CHECK SUMMON TRIGGERS ON FRESH PRESS
+            if (action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                val focused = activity.currentFocus
+                val host = navHostRef?.get() as? ViewGroup
+
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        if (focused is EditText && focused.selectionStart > 0) {
+                            return base.dispatchKeyEvent(event)
+                        }
+                        if (focused is AbsSeekBar) {
+                            return base.dispatchKeyEvent(event)
+                        }
+                        if (focused == null) {
+                            consumedKeyUpCode = keyCode
+                            openTvDock(null)
+                            return true
+                        }
+                        if (host != null && isDescendantOf(focused, host)) {
+                            val nextLeft = FocusFinder.getInstance().findNextFocus(host, focused, View.FOCUS_LEFT)
+                            val hasValidLeft = nextLeft != null && nextLeft.isShown && isDescendantOf(nextLeft, host)
+                            if (!hasValidLeft && !canAncestorScroll(focused, host, horizontal = true, dir = -1)) {
+                                consumedKeyUpCode = keyCode
+                                openTvDock(focused)
+                                return true
+                            }
+                        }
+                    }
+
+                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        if (focused == null) {
+                            consumedKeyUpCode = keyCode
+                            openTvDock(null)
+                            return true
+                        }
+                        if (host != null && isDescendantOf(focused, host)) {
+                            val nextDown = FocusFinder.getInstance().findNextFocus(host, focused, View.FOCUS_DOWN)
+                            val hasValidDown = nextDown != null && nextDown.isShown && isDescendantOf(nextDown, host)
+                            if (!hasValidDown && !canAncestorScroll(focused, host, horizontal = false, dir = +1)) {
+                                consumedKeyUpCode = keyCode
+                                openTvDock(focused)
+                                return true
+                            }
+                        }
+                    }
+
+                    KeyEvent.KEYCODE_BACK -> {
+                        if (focused !is EditText && isRootTabActive(activity)) {
+                            consumedKeyUpCode = keyCode
+                            openTvDock(focused)
+                            return true
+                        }
+                    }
+                }
+            }
+
+            return base.dispatchKeyEvent(event)
+        }
     }
 
     private fun extractMenuItems(navView: View): List<DockItem> {
@@ -448,33 +908,32 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             (activity as? FragmentActivity)?.let { attachToActivity(it) }
         }
         override fun onActivityResumed(activity: Activity) {
-            (activity as? FragmentActivity)?.let { attachToActivity(it) }
+            (activity as? FragmentActivity)?.let {
+                attachToActivity(it)
+                mainHandler.post { enforceState() }
+            }
         }
         override fun onActivityPaused(activity: Activity) = Unit
         override fun onActivityStopped(activity: Activity) = Unit
         override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
         override fun onActivityDestroyed(activity: Activity) {
+            (activity as? FragmentActivity)?.let { unwrapWindowCallback(it) }
             if (currentActivityRef?.get() === activity) currentActivityRef = null
         }
     }
 
     private val fragmentCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
         override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
-            if (unloaded) return
-            val name = f.javaClass.name
-            val isFullscreen = f is AbstractPlayerFragment<*> || name.contains("ResultFragment")
-            val isTopTab = name.contains("HomeFragment") ||
-                name.contains("SearchFragment") ||
-                name.contains("LibraryFragment") ||
-                name.contains("DownloadFragment") ||
-                name.contains("SettingsFragment")
-            if (isFullscreen) {
-                hideForFullscreen = true
-                enforceState()
-            } else if (isTopTab) {
-                hideForFullscreen = false
-                enforceState()
-            }
+            if (!unloaded) mainHandler.post { enforceState() }
+        }
+        override fun onFragmentPaused(fm: FragmentManager, f: Fragment) {
+            if (!unloaded) mainHandler.post { enforceState() }
+        }
+        override fun onFragmentStopped(fm: FragmentManager, f: Fragment) {
+            if (!unloaded) mainHandler.post { enforceState() }
+        }
+        override fun onFragmentViewDestroyed(fm: FragmentManager, f: Fragment) {
+            if (!unloaded) mainHandler.post { enforceState() }
         }
     }
 

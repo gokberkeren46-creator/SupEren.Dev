@@ -100,7 +100,7 @@ object SyncDialog {
             setTypeface(typeface, Typeface.BOLD)
         }
         val subtitle = TextView(context).apply {
-            text = "SupEren.Dev • Kaldığın Yer & Arama Geçmişi"
+            text = "SupEren.Dev • Kaldığın Yerden İzleme Senkronu"
             textSize = 10f
             setTextColor(COLOR_TEXT_SECONDARY)
             setPadding(0, 0, 0, dp(10))

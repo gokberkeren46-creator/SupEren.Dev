@@ -1,7 +1,7 @@
 version = 5
 
 cloudstream {
-    description = "Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati."
+    description = "Gösterge - Sol altta hıza göre gerçek kalan süre, sağ altta bitiş saati. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

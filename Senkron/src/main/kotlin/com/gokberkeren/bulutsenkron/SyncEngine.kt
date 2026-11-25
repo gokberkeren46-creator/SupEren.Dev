@@ -625,23 +625,23 @@ class SyncEngine(
             when {
                 !configured -> {
                     dotBg.setColor(COLOR_RED)
-                    label.text = "Senkron Kapalı"
+                    label.text = "Senkron değil"
                 }
                 httpState == HttpState.OK -> {
                     dotBg.setColor(COLOR_GREEN)
                     label.text = if (cloudUpdatedAtMs > 0L) {
-                        "Senkron ${formatClock(cloudUpdatedAtMs)} • $cloudItemCount"
+                        "${formatClock(cloudUpdatedAtMs)} • $cloudItemCount"
                     } else {
-                        "Senkron Hazır • 0"
+                        "Hazır • 0"
                     }
                 }
                 httpState == HttpState.PENDING -> {
                     dotBg.setColor(COLOR_RED)
-                    label.text = "Senkron Kontrol..."
+                    label.text = "Kontrol..."
                 }
                 else -> {
                     dotBg.setColor(COLOR_RED)
-                    label.text = "Senkron Bağlantı Yok"
+                    label.text = "Senkron değil"
                 }
             }
             badgeRoot?.bringToFront()

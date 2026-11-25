@@ -1,7 +1,7 @@
 import java.util.Base64
 import java.util.Properties
 
-version = 5
+version = 6
 
 val localProps = Properties().apply {
     val file = rootProject.file("local.properties")
@@ -26,7 +26,7 @@ fun encodeB64(value: String): String =
     if (value.isNotEmpty()) Base64.getEncoder().encodeToString(value.toByteArray(Charsets.UTF_8)) else ""
 
 cloudstream {
-    description = "Senkron - Kaldığın yerden izlemeyi cihazlar arasında otomatik eşitler."
+    description = "Senkron - Kaldığın yerden izlemeyi cihazlar arasında otomatik eşitler. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

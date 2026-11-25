@@ -1,6 +1,6 @@
 {
   "name": "SupEren.Dev",
-  "description": "SupEren.Dev - CloudStream için açık kaynak Birlikteİzleyelim Watch Party eklentisi.",
+  "description": "SupEren.Dev - CloudStream için açık kaynak eklentiler. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir.",
   "manifestVersion": 1,
   "iconUrl": "https://raw.githubusercontent.com/gokberkeren46-creator/SupEren.Dev/master/icon.png",
   "pluginLists": [

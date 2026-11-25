@@ -1,7 +1,7 @@
 version = 5
 
 cloudstream {
-    description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de en solda ◀ veya Geri ile açılır) ve 12 Vurgu Rengi."
+    description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de en solda ◀ veya Geri ile açılır) ve 12 Vurgu Rengi. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

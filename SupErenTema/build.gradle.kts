@@ -1,7 +1,7 @@
-version = 1
+version = 2
 
 cloudstream {
-    description = "SupErenv2.0 Tema - Tablet ve TV için Yüzen Cam Alt Menü (Floating Dock) ve 6 Vurgu Rengi."
+    description = "SupEren v2.0 - Yüzen Alt Menü (boyut/opaklık ayarlı) ve 6 Vurgu Rengi (TV'de yalnızca kumanda odak rengi)."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

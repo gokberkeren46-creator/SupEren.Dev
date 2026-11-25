@@ -2,6 +2,9 @@ package com.gokberkeren.superentema
 
 import android.app.Activity
 import android.app.Application
+import android.app.UiModeManager
+import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Color
 import android.graphics.PorterDuff
 import android.graphics.Typeface
@@ -24,13 +27,16 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import com.lagradost.cloudstream3.ui.player.AbstractPlayerFragment
+import com.lagradost.cloudstream3.ui.settings.Globals
 import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.WeakHashMap
 
 /**
- * Replaces CloudStream's left NavigationRailView / classic BottomNavigationView with a sleek
- * floating glass bottom dock (Tablet + Android TV D-Pad friendly) and tints TV focusOutline.
+ * SupEren v2.0 layout & accent hook:
+ *  - Phone / Tablet mode: replaces left rail / classic bottom bar with a resizable, rich-opacity Floating Dock.
+ *  - TV / Emulator mode: automatically leaves native left rail untouched (zero black strip or D-Pad dead-end)
+ *    and applies only the selected Accent Color to CloudStream's TV focusOutline.
  */
 class FloatingDockHook(private val prefs: TemaPrefs) {
 
@@ -48,6 +54,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     private var navItems: List<DockItem> = emptyList()
     private val tabViews = mutableMapOf<Int, TabViewHolder>()
+    private var builtScaleKey: String = ""
 
     @Volatile
     private var unloaded: Boolean = false
@@ -97,17 +104,33 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         !it.isFinishing && !it.isDestroyed
     }
 
+    fun isTvMode(context: Context? = currentActivity()): Boolean {
+        try {
+            if (Globals.isLayout(Globals.TV or Globals.EMULATOR)) return true
+        } catch (_: Throwable) {
+        }
+        if (focusOutlineRef?.get() != null) return true
+        val uiMode = context?.getSystemService(Context.UI_MODE_SERVICE) as? UiModeManager
+        return uiMode?.currentModeType == Configuration.UI_MODE_TYPE_TELEVISION
+    }
+
     fun refreshTheme() {
         mainHandler.post {
             if (unloaded) return@post
+            val act = currentActivity()
             if (!prefs.enabled) {
                 restoreNativeNav()
                 dockOverlay?.visibility = View.GONE
                 return@post
             }
-            val act = currentActivity() ?: return@post
-            ensureAttached(act)
-            applyAccentColors()
+            if (act != null) {
+                // Rebuild dock if scale changed
+                if (dockOverlay != null && builtScaleKey != prefs.scaleKey) {
+                    detachDock()
+                }
+                ensureAttached(act)
+            }
+            applyAccentAndStyle()
             enforceState()
         }
     }
@@ -132,6 +155,18 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         val outline = findViewByEntryName(content, "focus_outline") as? ImageView
         val homeRoot = findViewByEntryName(content, "home_root") as? ViewGroup ?: content
 
+        if (outline != null) {
+            focusOutlineRef = WeakReference(outline)
+        }
+
+        // TV MODE: Never hide left rail or attach floating dock; only tint focus_outline!
+        if (isTvMode(activity)) {
+            detachDock()
+            restoreNativeNav(keepFocusTint = true)
+            applyTvFocusTint()
+            return
+        }
+
         if (rail != null && navRailRef?.get() !== rail) {
             navRailRef = WeakReference(rail)
             if (origRailVisibility == null) origRailVisibility = rail.visibility
@@ -140,23 +175,22 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
             navBottomRef = WeakReference(bottom)
             if (origBottomVisibility == null) origBottomVisibility = bottom.visibility
         }
-        if (outline != null) {
-            focusOutlineRef = WeakReference(outline)
-        }
 
         val sourceNav = rail ?: bottom ?: return
         val extracted = extractMenuItems(sourceNav)
         if (extracted.isEmpty()) return
 
-        if (dockHost === homeRoot && dockOverlay != null && navItems.size == extracted.size) {
-            applyAccentColors()
+        if (dockHost === homeRoot && dockOverlay != null &&
+            navItems.size == extracted.size && builtScaleKey == prefs.scaleKey
+        ) {
+            applyAccentAndStyle()
             return
         }
 
         navItems = extracted
         selectedItemId = readSelectedItemId(sourceNav) ?: extracted.first().id
         buildDock(homeRoot)
-        applyAccentColors()
+        applyAccentAndStyle()
         enforceState()
     }
 
@@ -164,6 +198,9 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         detachDock()
         val ctx = container.context
         val d = ctx.resources.displayMetrics.density
+        val scale = prefs.currentScale().factor
+        builtScaleKey = prefs.scaleKey
+        fun sdp(v: Float): Int = (v * d * scale).toInt()
         fun dp(v: Int): Int = (v * d).toInt()
 
         val overlay = FrameLayout(ctx).apply {
@@ -179,8 +216,8 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         val pill = LinearLayout(ctx).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(6))
-            elevation = dp(12).toFloat()
+            setPadding(sdp(10f), sdp(7f), sdp(10f), sdp(7f))
+            elevation = dp(16).toFloat()
         }
 
         tabViews.clear()
@@ -190,18 +227,19 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 gravity = Gravity.CENTER
                 isClickable = true
                 isFocusable = true
-                setPadding(dp(12), dp(8), dp(12), dp(8))
+                setPadding(sdp(13f), sdp(9f), sdp(13f), sdp(9f))
                 layoutParams = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
                 ).apply {
-                    marginStart = dp(2)
-                    marginEnd = dp(2)
+                    marginStart = sdp(3f)
+                    marginEnd = sdp(3f)
                 }
             }
 
+            val iconPx = sdp(20f)
             val iconView = ImageView(ctx).apply {
-                layoutParams = LinearLayout.LayoutParams(dp(20), dp(20))
+                layoutParams = LinearLayout.LayoutParams(iconPx, iconPx)
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 if (item.icon != null) {
                     setImageDrawable(item.icon.constantState?.newDrawable()?.mutate() ?: item.icon)
@@ -210,10 +248,10 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
             val titleView = TextView(ctx).apply {
                 text = item.title
-                textSize = 12f
+                textSize = 11.5f * scale
                 setTypeface(typeface, Typeface.BOLD)
                 setSingleLine(true)
-                setPadding(dp(6), 0, 0, 0)
+                setPadding(sdp(6f), 0, 0, 0)
             }
 
             tab.addView(iconView)
@@ -234,7 +272,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
             ).apply {
-                bottomMargin = dp(14)
+                bottomMargin = dp(16)
             }
         )
 
@@ -247,7 +285,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     private fun selectTab(itemId: Int) {
         selectedItemId = itemId
-        applyAccentColors()
+        applyAccentAndStyle()
         val targetNav = navBottomRef?.get() ?: navRailRef?.get() ?: return
         try {
             val setter = targetNav.javaClass.getMethod("setSelectedItemId", Int::class.javaPrimitiveType)
@@ -257,44 +295,47 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         }
     }
 
-    private fun applyAccentColors() {
+    private fun applyTvFocusTint() {
+        val accent = prefs.currentAccent()
+        focusOutlineRef?.get()?.setColorFilter(accent.glowColor, PorterDuff.Mode.SRC_IN)
+    }
+
+    private fun applyAccentAndStyle() {
+        applyTvFocusTint()
         val pill = dockPill ?: return
         val ctx = pill.context
         val d = ctx.resources.displayMetrics.density
-        fun dp(v: Int): Int = (v * d).toInt()
+        val scale = prefs.currentScale().factor
+        fun sdp(v: Float): Float = v * d * scale
+        fun dp(v: Float): Int = (v * d).toInt()
+
         val accent = prefs.currentAccent()
+        val bgPreset = prefs.currentOpacity()
 
         pill.background = GradientDrawable().apply {
-            setColor(0xE6101420.toInt())
-            cornerRadius = dp(28).toFloat()
-            setStroke(dp(1), (accent.color and 0x00FFFFFF) or 0x66000000)
+            setColor(bgPreset.bgColor)
+            cornerRadius = sdp(30f)
+            setStroke(dp(1.5f).coerceAtLeast(1), (accent.color and 0x00FFFFFF) or 0xAA000000.toInt())
         }
-
-        // Tint TV focus outline to match accent color
-        focusOutlineRef?.get()?.setColorFilter(accent.glowColor, PorterDuff.Mode.SRC_IN)
 
         tabViews.forEach { (id, holder) ->
             val isSelected = (id == selectedItemId)
             val normalBg = GradientDrawable().apply {
-                cornerRadius = dp(22).toFloat()
-                if (isSelected) {
-                    setColor(accent.color)
-                } else {
-                    setColor(Color.TRANSPARENT)
-                }
+                cornerRadius = sdp(22f)
+                setColor(if (isSelected) accent.color else Color.TRANSPARENT)
             }
-            val focusedBg = GradientDrawable().apply {
-                cornerRadius = dp(22).toFloat()
+            val pressedBg = GradientDrawable().apply {
+                cornerRadius = sdp(22f)
                 setColor(if (isSelected) accent.glowColor else 0x44FFFFFF)
-                setStroke(dp(2), Color.WHITE)
+                setStroke(dp(1.5f).coerceAtLeast(1), Color.WHITE)
             }
             holder.container.background = StateListDrawable().apply {
-                addState(intArrayOf(android.R.attr.state_focused), focusedBg)
-                addState(intArrayOf(android.R.attr.state_pressed), focusedBg)
+                addState(intArrayOf(android.R.attr.state_focused), pressedBg)
+                addState(intArrayOf(android.R.attr.state_pressed), pressedBg)
                 addState(intArrayOf(), normalBg)
             }
 
-            val fgColor = if (isSelected) Color.WHITE else 0xFFB4C0D8.toInt()
+            val fgColor = if (isSelected) Color.WHITE else 0xFFD0D9EC.toInt()
             holder.icon.setColorFilter(fgColor, PorterDuff.Mode.SRC_IN)
             holder.title.setTextColor(fgColor)
             holder.title.visibility = if (isSelected) View.VISIBLE else View.GONE
@@ -304,6 +345,16 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     private fun enforceState() {
         if (!prefs.enabled) return
         val act = currentActivity()
+
+        if (isTvMode(act)) {
+            if (dockOverlay != null) {
+                detachDock()
+                restoreNativeNav(keepFocusTint = true)
+            }
+            applyTvFocusTint()
+            return
+        }
+
         if (act != null && act.javaClass.name.contains("MainActivity") && dockOverlay == null) {
             ensureAttached(act)
         }
@@ -311,15 +362,13 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         val rail = navRailRef?.get()
         val bottom = navBottomRef?.get()
 
-        // Always keep CloudStream's native rail & classic bottom bar hidden while theme is enabled
         if (rail != null && rail.visibility != View.GONE) rail.visibility = View.GONE
         if (bottom != null && bottom.visibility != View.GONE) bottom.visibility = View.GONE
 
-        // Sync active tab highlight if user navigated via Back button
         val liveSelected = readSelectedItemId(bottom ?: rail)
         if (liveSelected != null && liveSelected != selectedItemId && tabViews.containsKey(liveSelected)) {
             selectedItemId = liveSelected
-            applyAccentColors()
+            applyAccentAndStyle()
         }
 
         val showDock = !hideForFullscreen
@@ -327,10 +376,12 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         if (showDock) dockOverlay?.bringToFront()
     }
 
-    private fun restoreNativeNav() {
+    private fun restoreNativeNav(keepFocusTint: Boolean = false) {
         navRailRef?.get()?.let { it.visibility = origRailVisibility ?: View.VISIBLE }
         navBottomRef?.get()?.let { it.visibility = origBottomVisibility ?: View.GONE }
-        focusOutlineRef?.get()?.clearColorFilter()
+        if (!keepFocusTint) {
+            focusOutlineRef?.get()?.clearColorFilter()
+        }
     }
 
     private fun detachDock() {
@@ -343,6 +394,7 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         dockHost = null
         dockPill = null
         tabViews.clear()
+        builtScaleKey = ""
     }
 
     private fun extractMenuItems(navView: View): List<DockItem> {

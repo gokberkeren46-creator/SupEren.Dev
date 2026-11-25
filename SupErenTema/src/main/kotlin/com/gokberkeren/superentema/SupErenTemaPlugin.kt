@@ -27,18 +27,18 @@ class SupErenTemaPlugin : Plugin() {
 
         openSettings = { ctx ->
             val targetCtx = dockHook.currentActivity() ?: ctx
-            TemaSettingsDialog.show(targetCtx, prefs) {
+            TemaSettingsDialog.show(targetCtx, prefs, dockHook.isTvMode(targetCtx)) {
                 dockHook.refreshTheme()
             }
         }
 
-        Log.i(TAG, "SupErenv2.0 Tema loaded")
+        Log.i(TAG, "SupEren v2.0 loaded")
     }
 
     override fun beforeUnload() {
         hook?.unregister()
         hook = null
-        Log.i(TAG, "SupErenv2.0 Tema unloaded")
+        Log.i(TAG, "SupEren v2.0 unloaded")
     }
 
     companion object {

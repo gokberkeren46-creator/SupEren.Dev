@@ -90,3 +90,15 @@ subprojects {
 task<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }
+
+tasks.matching { it.name == "makePluginsJson" }.configureEach {
+    doLast {
+        val jsonFile = rootProject.layout.buildDirectory.file("plugins.json").get().asFile
+        if (jsonFile.exists()) {
+            val updated = jsonFile.readText(Charsets.UTF_8)
+                .replace("\"name\": \"SupErenTema\"", "\"name\": \"SupEren v2.0\"")
+                .replace("\"name\":\"SupErenTema\"", "\"name\":\"SupEren v2.0\"")
+            jsonFile.writeText(updated, Charsets.UTF_8)
+        }
+    }
+}

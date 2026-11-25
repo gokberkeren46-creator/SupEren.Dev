@@ -471,22 +471,8 @@ class BitrateOverlayHook(private val prefs: BitratePrefs) {
     }
 
     private fun isControllerShowing(fragment: AbstractPlayerFragment<*>): Boolean {
-        var cur: Class<*>? = fragment.javaClass
-        while (cur != null) {
-            try {
-                val m = cur.getDeclaredMethod("isShowing")
-                m.isAccessible = true
-                if (m.invoke(fragment) == true) return true
-                break
-            } catch (_: NoSuchMethodException) {
-                cur = cur.superclass
-            } catch (_: Throwable) {
-                break
-            }
-        }
         return try {
-            val btn = fragment.playerPausePlay
-            btn != null && btn.isShown && btn.alpha > 0.1f
+            fragment.isUIShowing()
         } catch (_: Throwable) {
             false
         }

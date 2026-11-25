@@ -1,4 +1,4 @@
-version = 2
+version = 3
 
 cloudstream {
     description = "BitrateGoster - Oynatıcı menüsü açıldığında sol üst köşede videonun bitrate değerini gösterir. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"

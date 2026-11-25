@@ -94,7 +94,7 @@ object SyncDialog {
         }
 
         val title = TextView(context).apply {
-            text = "BulutSenkron"
+            text = "Senkron"
             textSize = 17f
             setTextColor(COLOR_TEXT_PRIMARY)
             setTypeface(typeface, Typeface.BOLD)
@@ -286,6 +286,9 @@ object SyncDialog {
         dialog.setOnDismissListener {
             prefs.serverInput = serverInput.text.toString()
             prefs.profilePin = pinInput.text.toString()
+            if (prefs.resolveEndpointUrl() != null) {
+                engine.triggerAutoSyncNow()
+            }
         }
 
         dialog.show()

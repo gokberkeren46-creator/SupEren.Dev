@@ -4,6 +4,9 @@ import android.app.Activity
 import android.app.Application
 import android.content.Context
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
@@ -56,24 +59,35 @@ class SyncEngine(
         .writeTimeout(20, TimeUnit.SECONDS)
         .build()
 
+    private val mainHandler = Handler(Looper.getMainLooper())
     private val registeredActivities = Collections.newSetFromMap(WeakHashMap<FragmentActivity, Boolean>())
     private var currentActivityRef: WeakReference<FragmentActivity>? = null
     private var pendingSyncJob: Job? = null
+
+    @Volatile
+    private var lastAutoPullElapsedMs: Long = 0L
 
     fun register(application: Application, initialActivity: Activity?) {
         application.registerActivityLifecycleCallbacks(activityCallbacks)
         (initialActivity as? FragmentActivity)?.let { attachToActivity(it) }
 
         // Initial pull on app launch
-        scheduleSync(delayMs = 2_500L)
+        scheduleSync(delayMs = 2_000L, force = true)
     }
 
     fun currentActivity(): FragmentActivity? = currentActivityRef?.get()?.takeIf {
         !it.isFinishing && !it.isDestroyed
     }
 
-    private fun scheduleSync(delayMs: Long) {
+    fun triggerAutoSyncNow() {
+        scheduleSync(delayMs = 300L, force = true)
+    }
+
+    private fun scheduleSync(delayMs: Long, force: Boolean) {
         if (prefs.resolveEndpointUrl() == null) return
+        val now = SystemClock.elapsedRealtime()
+        if (!force && (now - lastAutoPullElapsedMs) < AUTO_SYNC_THROTTLE_MS) return
+        lastAutoPullElapsedMs = now
         pendingSyncJob?.cancel()
         pendingSyncJob = scope.launch {
             delay(delayMs)
@@ -155,6 +169,9 @@ class SyncEngine(
                 val summary = "Son eşitleme $clock • ${mergedResume.size} içerik, ${mergedHistory.size} arama"
                 prefs.lastSyncSummary = summary
                 Log.i(TAG, "Sync OK ($summary; pulled resume=$appliedRemoteResume, search=$appliedRemoteSearch)")
+                if (appliedRemoteResume > 0) {
+                    notifyHomeReload()
+                }
                 Result.success(summary)
             } catch (t: Throwable) {
                 Log.e(TAG, "Sync failed", t)
@@ -347,6 +364,23 @@ class SyncEngine(
         return http.newCall(req).execute().use { it.isSuccessful }
     }
 
+    private fun notifyHomeReload() {
+        mainHandler.post {
+            try {
+                val mainActClass = Class.forName("com.lagradost.cloudstream3.MainActivity")
+                val companionField = mainActClass.getDeclaredField("Companion")
+                val companion = companionField.get(null) ?: return@post
+                val getter = companion.javaClass.getMethod("getReloadHomeEvent")
+                val eventObj = getter.invoke(companion) ?: return@post
+                val invokeMethod = eventObj.javaClass.methods.firstOrNull {
+                    it.name == "invoke" && it.parameterCount == 1
+                }
+                invokeMethod?.invoke(eventObj, true)
+            } catch (_: Throwable) {
+            }
+        }
+    }
+
     private val activityCallbacks = object : Application.ActivityLifecycleCallbacks {
         override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
             (activity as? FragmentActivity)?.let { attachToActivity(it) }
@@ -358,6 +392,7 @@ class SyncEngine(
             (activity as? FragmentActivity)?.let {
                 currentActivityRef = WeakReference(it)
                 attachToActivity(it)
+                scheduleSync(delayMs = 1_000L, force = false)
             }
         }
         override fun onActivityPaused(activity: Activity) = Unit
@@ -376,12 +411,19 @@ class SyncEngine(
     }
 
     private val fragmentCallbacks = object : FragmentManager.FragmentLifecycleCallbacks() {
+        override fun onFragmentResumed(fm: FragmentManager, f: Fragment) {
+            // Pull latest watch history automatically when opening/returning to Home screen (throttled to 15s)
+            if (f.javaClass.name.contains("HomeFragment")) {
+                scheduleSync(delayMs = 600L, force = false)
+            }
+        }
+
         override fun onFragmentPaused(fm: FragmentManager, f: Fragment) {
-            // Sync right after exiting a video or leaving search (no continuous background traffic!)
+            // Push immediately after exiting a video or leaving search
             if (f is AbstractPlayerFragment<*>) {
-                scheduleSync(delayMs = 1_200L)
+                scheduleSync(delayMs = 1_200L, force = true)
             } else if (f.javaClass.name.contains("SearchFragment")) {
-                scheduleSync(delayMs = 800L)
+                scheduleSync(delayMs = 800L, force = true)
             }
         }
     }
@@ -398,7 +440,8 @@ class SyncEngine(
     )
 
     companion object {
-        private const val TAG = "BulutSenkron"
+        private const val TAG = "Senkron"
+        private const val AUTO_SYNC_THROTTLE_MS = 15_000L
         private const val MAX_RESUME_ITEMS = 50
         private const val MAX_SEARCH_HISTORY = 40
     }

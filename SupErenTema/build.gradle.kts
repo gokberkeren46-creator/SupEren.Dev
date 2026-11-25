@@ -1,7 +1,7 @@
-version = 3
+version = 4
 
 cloudstream {
-    description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de kumandayla otomatik açılır) ve 6 Vurgu Rengi."
+    description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de en solda ◀ veya Geri ile açılır) ve 6 Vurgu Rengi."
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

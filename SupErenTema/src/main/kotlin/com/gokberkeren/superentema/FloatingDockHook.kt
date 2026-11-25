@@ -632,36 +632,46 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     }
 
     /**
-     * Returns true ONLY when one of the 5 root tabs is currently displayed (not a Settings/Downloads sub-page),
-     * so pressing Back on Settings sub-pages still navigates up normally.
+     * Returns true ONLY when one of the 5 root tabs is currently displayed and NO sub-screen
+     * (like Extensions, Plugins, SettingsPlayer, DownloadChild) is visible on top,
+     * so pressing Back on sub-pages always navigates up normally.
      */
     private fun isRootTabActive(activity: FragmentActivity): Boolean {
-        return hasVisibleRootTabFragment(activity.supportFragmentManager)
-    }
-
-    private fun hasVisibleRootTabFragment(fm: FragmentManager): Boolean {
-        val list = try { fm.fragments } catch (_: Throwable) { return false }
-        for (f in list) {
-            if (f == null || !f.isAdded || f.isHidden || f is DialogFragment) continue
-            val simple = f.javaClass.simpleName
-            val v = f.view
-            if (v != null && v.visibility == View.VISIBLE && v.isShown) {
-                if (simple == "HomeFragment" ||
-                    simple == "SearchFragment" ||
-                    simple == "LibraryFragment" ||
-                    simple == "DownloadFragment" ||
-                    simple == "SettingsFragment" ||
-                    simple == "SettingsFragment2"
-                ) {
-                    return true
-                }
-            }
-            val childFm = try { f.childFragmentManager } catch (_: Throwable) { null }
-            if (childFm != null && hasVisibleRootTabFragment(childFm)) {
-                return true
+        val visibleNames = ArrayList<String>()
+        collectVisibleFragmentNames(activity.supportFragmentManager, visibleNames)
+        if (visibleNames.isEmpty()) return false
+        var hasRoot = false
+        for (simple in visibleNames) {
+            if (simple == "NavHostFragment") continue
+            val isRoot = simple == "HomeFragment" ||
+                simple == "SearchFragment" ||
+                simple == "LibraryFragment" ||
+                simple == "DownloadFragment" ||
+                simple == "SettingsFragment" ||
+                simple == "SettingsFragment2"
+            if (isRoot) {
+                hasRoot = true
+            } else {
+                // Any non-root sub-page visible on screen -> let Back navigate up!
+                return false
             }
         }
-        return false
+        return hasRoot
+    }
+
+    private fun collectVisibleFragmentNames(fm: FragmentManager, out: MutableList<String>) {
+        val list = try { fm.fragments } catch (_: Throwable) { return }
+        for (f in list) {
+            if (f == null || !f.isAdded || f.isHidden || f is DialogFragment) continue
+            val v = f.view
+            if (v != null && v.visibility == View.VISIBLE && v.isShown) {
+                out.add(f.javaClass.simpleName)
+            }
+            val childFm = try { f.childFragmentManager } catch (_: Throwable) { null }
+            if (childFm != null) {
+                collectVisibleFragmentNames(childFm, out)
+            }
+        }
     }
 
     private fun restoreNativeNav() {
@@ -797,12 +807,23 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                 return base.dispatchKeyEvent(event)
             }
 
-            // 2. DOCK IS HIDDEN ON TV — CHECK SUMMON TRIGGERS ON FRESH PRESS
+            // 2. DOCK IS HIDDEN ON TV — NEVER hijack DPAD_DOWN / DPAD_UP / DPAD_RIGHT!
+            //    Only summon on:
+            //      a) Back on the 5 root tabs (1st Back = dock, 2nd Back = normal exit/back)
+            //      b) Left (◀) ONLY AFTER base.dispatchKeyEvent returns false AND focused.focusSearch(FOCUS_LEFT) finds nothing!
             if (action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 val focused = activity.currentFocus
                 val host = navHostRef?.get() as? ViewGroup
 
                 when (keyCode) {
+                    KeyEvent.KEYCODE_BACK -> {
+                        if (focused !is EditText && isRootTabActive(activity)) {
+                            consumedKeyUpCode = keyCode
+                            openTvDock(focused)
+                            return true
+                        }
+                    }
+
                     KeyEvent.KEYCODE_DPAD_LEFT -> {
                         if (focused is EditText && focused.selectionStart > 0) {
                             return base.dispatchKeyEvent(event)
@@ -815,40 +836,29 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
                             openTvDock(null)
                             return true
                         }
+                        // Give ComposeView / RecyclerView / Fragment FIRST chance to move focus or scroll left!
+                        val handledByApp = base.dispatchKeyEvent(event)
+                        if (handledByApp || activity.currentFocus !== focused) {
+                            return handledByApp
+                        }
+                        // App/Compose did NOT consume Left. Check if ViewRootImpl would find a valid left focus inside host:
                         if (host != null && isDescendantOf(focused, host)) {
-                            val nextLeft = FocusFinder.getInstance().findNextFocus(host, focused, View.FOCUS_LEFT)
-                            val hasValidLeft = nextLeft != null && nextLeft.isShown && isDescendantOf(nextLeft, host)
+                            val nextLeft = try {
+                                focused.focusSearch(View.FOCUS_LEFT)
+                            } catch (_: Throwable) {
+                                null
+                            }
+                            val hasValidLeft = nextLeft != null &&
+                                nextLeft !== focused &&
+                                nextLeft.isShown &&
+                                isDescendantOf(nextLeft, host)
                             if (!hasValidLeft && !canAncestorScroll(focused, host, horizontal = true, dir = -1)) {
                                 consumedKeyUpCode = keyCode
                                 openTvDock(focused)
                                 return true
                             }
                         }
-                    }
-
-                    KeyEvent.KEYCODE_DPAD_DOWN -> {
-                        if (focused == null) {
-                            consumedKeyUpCode = keyCode
-                            openTvDock(null)
-                            return true
-                        }
-                        if (host != null && isDescendantOf(focused, host)) {
-                            val nextDown = FocusFinder.getInstance().findNextFocus(host, focused, View.FOCUS_DOWN)
-                            val hasValidDown = nextDown != null && nextDown.isShown && isDescendantOf(nextDown, host)
-                            if (!hasValidDown && !canAncestorScroll(focused, host, horizontal = false, dir = +1)) {
-                                consumedKeyUpCode = keyCode
-                                openTvDock(focused)
-                                return true
-                            }
-                        }
-                    }
-
-                    KeyEvent.KEYCODE_BACK -> {
-                        if (focused !is EditText && isRootTabActive(activity)) {
-                            consumedKeyUpCode = keyCode
-                            openTvDock(focused)
-                            return true
-                        }
+                        return false
                     }
                 }
             }

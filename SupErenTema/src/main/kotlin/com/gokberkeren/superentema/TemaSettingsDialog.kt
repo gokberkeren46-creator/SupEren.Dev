@@ -94,7 +94,7 @@ object TemaSettingsDialog {
         }
         val subtitle = TextView(context).apply {
             text = if (isTv) {
-                "SupEren.Dev • TV Otomatik Alt Menü (◀ / ▼ / Geri) & Vurgu Rengi"
+                "SupEren.Dev • TV Otomatik Alt Menü (En Solda ◀ veya Geri) & Vurgu Rengi"
             } else {
                 "SupEren.Dev • Yüzen Alt Menü & Vurgu Rengi"
             }

@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "Ne İzlesem - Kategori ve IMDb puanına göre yüklü sitelerinizden 3 sürpriz film/dizi önerir, seçtiğinizi direkt açar (Tam uyum için SupEren v2.0 temasını etkinleştirin). Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"

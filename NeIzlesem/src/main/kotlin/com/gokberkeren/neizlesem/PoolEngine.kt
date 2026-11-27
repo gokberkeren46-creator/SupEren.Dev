@@ -7,6 +7,7 @@ import com.lagradost.cloudstream3.MainAPI
 import com.lagradost.cloudstream3.MainPageRequest
 import com.lagradost.cloudstream3.SearchResponse
 import com.lagradost.cloudstream3.TvType
+import com.lagradost.cloudstream3.utils.AppContextUtils
 import com.lagradost.cloudstream3.utils.AppUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -168,22 +169,15 @@ class PoolEngine {
 
     fun openCandidate(activity: Activity, candidate: PickCandidate) {
         try {
-            // Reflection handles Activity.loadSearchResult(...) across CloudStream versions
-            val m = AppUtils::class.java.methods.firstOrNull {
-                it.name == "loadSearchResult" && it.parameterTypes.size >= 2 &&
-                    SearchResponse::class.java.isAssignableFrom(it.parameterTypes[1])
+            with(AppContextUtils) {
+                activity.loadSearchResult(candidate.response, 0, null)
             }
-            if (m != null) {
-                val args = Array<Any?>(m.parameterTypes.size) { idx ->
-                    when (idx) {
-                        0 -> activity
-                        1 -> candidate.response
-                        2 -> 0
-                        else -> null
-                    }
-                }
-                m.invoke(AppUtils, *args)
-            }
+            return
+        } catch (_: Throwable) {
+        }
+        try {
+            AppContextUtils.loadSearchResult(candidate.response, 0, null)
+            return
         } catch (_: Throwable) {
         }
     }

@@ -98,6 +98,8 @@ tasks.matching { it.name == "makePluginsJson" }.configureEach {
             val updated = jsonFile.readText(Charsets.UTF_8)
                 .replace("\"name\": \"SupErenTema\"", "\"name\": \"SupEren v2.0\"")
                 .replace("\"name\":\"SupErenTema\"", "\"name\":\"SupEren v2.0\"")
+                .replace("\"name\": \"NeIzlesem\"", "\"name\": \"Ne İzlesem\"")
+                .replace("\"name\":\"NeIzlesem\"", "\"name\":\"Ne İzlesem\"")
             jsonFile.writeText(updated, Charsets.UTF_8)
         }
     }

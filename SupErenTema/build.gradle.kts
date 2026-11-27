@@ -1,4 +1,4 @@
-version = 5
+version = 6
 
 cloudstream {
     description = "SupEren v2.0 - Tablet ve TV uyumlu Yüzen Alt Menü (boyut/koyuluk ayarlı, TV'de en solda ◀ veya Geri ile açılır) ve 12 Vurgu Rengi. Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"

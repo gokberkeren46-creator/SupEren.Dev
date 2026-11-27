@@ -6,8 +6,13 @@ import android.app.Application
 import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.PorterDuff
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -110,6 +115,15 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     fun register(application: Application, initialActivity: Activity?) {
         registeredApp = application
+        System.getProperties()[PROP_DOCK_ACTIVE] = prefs.enabled
+        System.getProperties()[PROP_DOCK_REFRESH] = Runnable {
+            mainHandler.post {
+                if (!unloaded) {
+                    detachDock()
+                    currentActivity()?.let { ensureAttached(it) }
+                }
+            }
+        }
         application.registerActivityLifecycleCallbacks(activityCallbacks)
         (initialActivity as? FragmentActivity)?.let { attachToActivity(it) }
         mainHandler.postDelayed(enforceRunnable, 300L)
@@ -117,6 +131,8 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     fun unregister() {
         unloaded = true
+        System.getProperties().remove(PROP_DOCK_ACTIVE)
+        System.getProperties().remove(PROP_DOCK_REFRESH)
         mainHandler.removeCallbacks(enforceRunnable)
         registeredApp?.let {
             try { it.unregisterActivityLifecycleCallbacks(activityCallbacks) } catch (_: Throwable) {}
@@ -232,8 +248,15 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
         }
 
         val sourceNav = rail ?: bottom ?: return
-        val extracted = extractMenuItems(sourceNav)
+        val extracted = extractMenuItems(sourceNav).toMutableList()
         if (extracted.isEmpty()) return
+
+        // Insert optional center plugin action (e.g. Ne İzlesem dice button) right in the middle!
+        val centerAction = readCenterAction()
+        if (centerAction != null) {
+            val mid = extracted.size / 2
+            extracted.add(mid, DockItem(CENTER_ACTION_ID, centerAction.first, makeDiceDrawable()))
+        }
 
         val existingOverlay = dockOverlay
         if (dockHost === content &&
@@ -374,6 +397,10 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     }
 
     private fun selectTab(itemId: Int) {
+        if (itemId == CENTER_ACTION_ID) {
+            readCenterAction()?.second?.run()
+            return
+        }
         selectedItemId = itemId
         focusedDockItemId = itemId
         applyAccentAndStyle()
@@ -449,6 +476,11 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
 
     private fun activateFocusedDockTab() {
         val targetId = focusedDockItemId.takeIf { tabViews.containsKey(it) } ?: selectedItemId
+        if (targetId == CENTER_ACTION_ID) {
+            closeTvDock(restoreFocus = false)
+            readCenterAction()?.second?.run()
+            return
+        }
         val sameTab = (targetId == selectedItemId)
         if (!sameTab) {
             lastContentFocusRef = null
@@ -950,7 +982,63 @@ class FloatingDockHook(private val prefs: TemaPrefs) {
     private data class DockItem(val id: Int, val title: String, val icon: Drawable?)
     private data class TabViewHolder(val container: LinearLayout, val icon: ImageView, val title: TextView)
 
+    private fun readCenterAction(): Pair<String, Runnable>? {
+        val raw = System.getProperties()[PROP_CENTER_ACTION] as? Map<*, *> ?: return null
+        val title = (raw["title"] as? String)?.takeIf { it.isNotBlank() } ?: "Ne İzlesem"
+        val action = raw["action"] as? Runnable ?: return null
+        return title to action
+    }
+
+    private fun makeDiceDrawable(): Drawable {
+        return object : Drawable() {
+            private val strokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.STROKE
+                color = Color.WHITE
+            }
+            private val dotPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                style = Paint.Style.FILL
+                color = Color.WHITE
+            }
+
+            override fun draw(canvas: Canvas) {
+                val b = bounds
+                val w = b.width().toFloat()
+                val h = b.height().toFloat()
+                val pad = w * 0.12f
+                strokePaint.strokeWidth = (w * 0.10f).coerceAtLeast(2f)
+                val rect = RectF(b.left + pad, b.top + pad, b.right - pad, b.bottom - pad)
+                canvas.drawRoundRect(rect, w * 0.22f, h * 0.22f, strokePaint)
+                val r = (w * 0.085f).coerceAtLeast(1.8f)
+                val cx = b.exactCenterX()
+                val cy = b.exactCenterY()
+                val off = w * 0.20f
+                canvas.drawCircle(cx, cy, r, dotPaint)
+                canvas.drawCircle(cx - off, cy - off, r, dotPaint)
+                canvas.drawCircle(cx + off, cy - off, r, dotPaint)
+                canvas.drawCircle(cx - off, cy + off, r, dotPaint)
+                canvas.drawCircle(cx + off, cy + off, r, dotPaint)
+            }
+
+            override fun setAlpha(alpha: Int) {
+                strokePaint.alpha = alpha
+                dotPaint.alpha = alpha
+            }
+
+            override fun setColorFilter(colorFilter: ColorFilter?) {
+                strokePaint.colorFilter = colorFilter
+                dotPaint.colorFilter = colorFilter
+            }
+
+            @Deprecated("Deprecated in Java")
+            override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+        }
+    }
+
     companion object {
         private const val TAG = "SupErenTema"
+        private const val CENTER_ACTION_ID = -4616
+        private const val PROP_CENTER_ACTION = "superen.dock.center_action"
+        private const val PROP_DOCK_REFRESH = "superen.dock.refresh"
+        private const val PROP_DOCK_ACTIVE = "superen.dock.active"
     }
 }

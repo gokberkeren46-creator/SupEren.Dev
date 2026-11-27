@@ -1,7 +1,7 @@
-version = 2
+version = 3
 
 cloudstream {
-    description = "IntroAtla - Dizi ve animelerde sol alt köşede Netflix tarzı 'İntro Atla' butonu gösterir (IntroDB/AniSkip API + ayarlanabilir +85sn yedek). Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"
+    description = "IntroAtla - Dizi ve animelerde IntroDB/AniSkip API verisi varsa introyu otomatik atlar (yedek buton kapalı, API yoksa gizli). Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"
     authors = listOf("gokberkeren46-creator")
     status = 1
     tvTypes = listOf("All")

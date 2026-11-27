@@ -225,35 +225,24 @@ class IntroOverlayHook(
         }
 
         val posMs = getPlayerPositionMs(fragment) ?: return
-        val hudVisible = isHudShowing(fragment)
         val intro = activeIntro
 
-        if (intro != null) {
-            val inWindow = posMs in intro.startMs..intro.endMs
-            if (inWindow && !skippedCurrentIntro) {
-                updateButtonText(isExactApi = true)
-                if (btn.visibility != View.VISIBLE) {
-                    btn.alpha = prefs.alpha
-                    btn.visibility = View.VISIBLE
-                    overlayRoot?.bringToFront()
-                }
-            } else {
-                if (btn.visibility != View.GONE) btn.visibility = View.GONE
-                if (posMs < intro.startMs) skippedCurrentIntro = false
-            }
+        if (intro == null) {
+            if (btn.visibility != View.GONE) btn.visibility = View.GONE
+            return
+        }
+
+        val inWindow = posMs in intro.startMs until intro.endMs
+        if (inWindow && !skippedCurrentIntro) {
+            btn.visibility = View.GONE
+            seekPlayerTo(fragment, intro.endMs, isDelta = false)
+            skippedCurrentIntro = true
+            try {
+                Toast.makeText(fragment.requireContext(), "⏭ İntro otomatik atlandı", Toast.LENGTH_SHORT).show()
+            } catch (_: Throwable) {}
         } else {
-            // Fallback mode: first 5 minutes when HUD is visible
-            val inFallbackWindow = posMs in 0L..FALLBACK_WINDOW_MS
-            if (inFallbackWindow && hudVisible) {
-                updateButtonText(isExactApi = false)
-                if (btn.visibility != View.VISIBLE) {
-                    btn.alpha = prefs.alpha
-                    btn.visibility = View.VISIBLE
-                    overlayRoot?.bringToFront()
-                }
-            } else {
-                if (btn.visibility != View.GONE) btn.visibility = View.GONE
-            }
+            if (btn.visibility != View.GONE) btn.visibility = View.GONE
+            if (posMs < intro.startMs) skippedCurrentIntro = false
         }
     }
 

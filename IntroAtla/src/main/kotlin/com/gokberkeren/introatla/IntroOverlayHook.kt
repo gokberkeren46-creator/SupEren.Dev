@@ -12,10 +12,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.FragmentActivity
 import androidx.fragment.app.FragmentManager
 import com.lagradost.cloudstream3.ui.player.AbstractPlayerFragment
+import com.lagradost.cloudstream3.ui.player.PlayerEventSource
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -233,6 +235,7 @@ class IntroOverlayHook(
                 if (btn.visibility != View.VISIBLE) {
                     btn.alpha = prefs.alpha
                     btn.visibility = View.VISIBLE
+                    overlayRoot?.bringToFront()
                 }
             } else {
                 if (btn.visibility != View.GONE) btn.visibility = View.GONE
@@ -246,6 +249,7 @@ class IntroOverlayHook(
                 if (btn.visibility != View.VISIBLE) {
                     btn.alpha = prefs.alpha
                     btn.visibility = View.VISIBLE
+                    overlayRoot?.bringToFront()
                 }
             } else {
                 if (btn.visibility != View.GONE) btn.visibility = View.GONE
@@ -267,41 +271,41 @@ class IntroOverlayHook(
         val fragment = activeFragmentRef?.get() ?: return
         val intro = activeIntro
         if (intro != null) {
-            seekPlayerTo(fragment, intro.endMs)
+            seekPlayerTo(fragment, intro.endMs, isDelta = false)
             skippedCurrentIntro = true
         } else {
-            val pos = getPlayerPositionMs(fragment) ?: return
-            seekPlayerTo(fragment, pos + prefs.fallbackSeconds * 1000L)
+            seekPlayerTo(fragment, prefs.fallbackSeconds * 1000L, isDelta = true)
         }
         skipButton?.visibility = View.GONE
-    }
-
-    private fun getPlayerObject(fragment: AbstractPlayerFragment<*>): Any? {
-        return try {
-            fragment.player
-        } catch (_: Throwable) {
-            null
-        }
+        try {
+            Toast.makeText(fragment.requireContext(), "⏭ İntro atlandı", Toast.LENGTH_SHORT).show()
+        } catch (_: Throwable) {}
     }
 
     private fun getPlayerPositionMs(fragment: AbstractPlayerFragment<*>): Long? {
-        val p = getPlayerObject(fragment) ?: return null
         return try {
-            val m = p.javaClass.methods.firstOrNull { it.name == "getPosition" && it.parameterTypes.isEmpty() }
-            (m?.invoke(p) as? Long)?.takeIf { it >= 0L }
+            fragment.player.getPosition()?.takeIf { it >= 0L }
         } catch (_: Throwable) {
             null
         }
     }
 
-    private fun seekPlayerTo(fragment: AbstractPlayerFragment<*>, targetMs: Long) {
-        val p = getPlayerObject(fragment) ?: return
+    private fun seekPlayerTo(fragment: AbstractPlayerFragment<*>, valueMs: Long, isDelta: Boolean) {
         try {
-            val m = p.javaClass.methods.firstOrNull {
-                it.name == "seekTo" && it.parameterTypes.size == 1 &&
-                    (it.parameterTypes[0] == Long::class.javaPrimitiveType || it.parameterTypes[0] == Long::class.javaObjectType)
+            val p = fragment.player
+            if (isDelta) {
+                p.seekTime(valueMs, PlayerEventSource.UI)
+            } else {
+                p.seekTo(valueMs.coerceAtLeast(0L), PlayerEventSource.UI)
             }
-            m?.invoke(p, targetMs.coerceAtLeast(0L))
+            return
+        } catch (_: Throwable) {
+        }
+        try {
+            val p = fragment.player
+            val pos = p.getPosition() ?: 0L
+            val target = if (isDelta) (pos + valueMs).coerceAtLeast(0L) else valueMs.coerceAtLeast(0L)
+            p.seekTo(target, PlayerEventSource.UI)
         } catch (_: Throwable) {
         }
     }

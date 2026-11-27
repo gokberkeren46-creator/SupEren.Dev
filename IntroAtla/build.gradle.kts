@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "IntroAtla - Dizi ve animelerde sol alt köşede Netflix tarzı 'İntro Atla' butonu gösterir (IntroDB/AniSkip API + ayarlanabilir +85sn yedek). Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"

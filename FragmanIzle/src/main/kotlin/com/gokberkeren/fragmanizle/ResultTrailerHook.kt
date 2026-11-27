@@ -117,15 +117,16 @@ class ResultTrailerHook(
         val titleId = ctx.resources.getIdentifier("result_title", "id", pkg)
         val yearId = ctx.resources.getIdentifier("result_meta_year", "id", pkg)
 
-        if (playParentId == 0 || titleId == 0) return false
+        if (titleId == 0) return false
 
-        val playParent = root.findViewById<ViewGroup>(playParentId) ?: return false
         val titleView = root.findViewById<TextView>(titleId) ?: return false
         val rawTitle = titleView.text?.toString()?.trim().orEmpty()
         if (rawTitle.isEmpty()) return false // Page still loading
 
-        // Already injected in this container?
-        val existing = playParent.findViewWithTag<View>(BUTTON_TAG)
+        val playParent = if (playParentId != 0) root.findViewById<ViewGroup>(playParentId) else null
+
+        // Already injected in this view tree?
+        val existing = root.findViewWithTag<View>(BUTTON_TAG)
         if (existing != null) {
             existing.visibility = if (prefs.enabled) View.VISIBLE else View.GONE
             injectedButtonRef = WeakReference(existing)
@@ -154,7 +155,7 @@ class ResultTrailerHook(
             setTextColor(Color.WHITE)
             setTypeface(typeface, Typeface.BOLD)
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(9), dp(14), dp(9))
+            setPadding(dp(14), dp(10), dp(14), dp(10))
             background = StateListDrawable().apply {
                 addState(intArrayOf(android.R.attr.state_focused), focusedBg)
                 addState(intArrayOf(android.R.attr.state_pressed), focusedBg)
@@ -162,9 +163,22 @@ class ResultTrailerHook(
             }
             isClickable = true
             isFocusable = true
+            isFocusableInTouchMode = false
             setOnFocusChangeListener { v, hasFocus ->
                 val s = if (hasFocus) 1.04f else 1.0f
                 v.animate().scaleX(s).scaleY(s).setDuration(110).start()
+            }
+            setOnKeyListener { _, keyCode, event ->
+                if (event.action == android.view.KeyEvent.ACTION_UP &&
+                    (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                        keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                        keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)
+                ) {
+                    performClick()
+                    true
+                } else {
+                    false
+                }
             }
             setOnClickListener {
                 val currentTitle = root.findViewById<TextView>(titleId)?.text?.toString()?.trim().orEmpty()
@@ -175,20 +189,35 @@ class ResultTrailerHook(
             }
         }
 
-        val isHorizontal = (playParent as? LinearLayout)?.orientation == LinearLayout.HORIZONTAL
-        val lp = LinearLayout.LayoutParams(
-            if (isHorizontal) LinearLayout.LayoutParams.WRAP_CONTENT else LinearLayout.LayoutParams.MATCH_PARENT,
-            LinearLayout.LayoutParams.WRAP_CONTENT
-        ).apply {
-            if (isHorizontal) {
-                marginStart = dp(8)
-                gravity = Gravity.CENTER_VERTICAL
-            } else {
-                topMargin = dp(6)
+        // Prefer result_play_parent when visible & laid out; otherwise insert right below titleView's parent
+        val usePlayParent = playParent != null && playParent.visibility == View.VISIBLE
+        if (usePlayParent && playParent != null) {
+            val isHorizontal = (playParent as? LinearLayout)?.orientation == LinearLayout.HORIZONTAL
+            val lp = LinearLayout.LayoutParams(
+                if (isHorizontal) LinearLayout.LayoutParams.WRAP_CONTENT else LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                if (isHorizontal) {
+                    marginStart = dp(8)
+                    gravity = Gravity.CENTER_VERTICAL
+                } else {
+                    topMargin = dp(6)
+                }
             }
+            playParent.addView(btn, lp)
+        } else {
+            val titleParent = titleView.parent as? ViewGroup ?: return false
+            val idx = titleParent.indexOfChild(titleView).coerceAtLeast(0) + 1
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                topMargin = dp(6)
+                bottomMargin = dp(6)
+            }
+            titleParent.addView(btn, idx.coerceAtMost(titleParent.childCount), lp)
         }
 
-        playParent.addView(btn, lp)
         injectedButtonRef = WeakReference(btn)
         return true
     }

@@ -1,4 +1,4 @@
-version = 1
+version = 2
 
 cloudstream {
     description = "FragmanIzle - Film ve dizi detay sayfasında 'Oynat' butonunun yanına/altına '🎬 Fragman' butonu ekler (Türkçe fragman öncelikli, uygulama içi pencere veya YouTube/SmartTube desteği). Kaynak kodlar ücretsiz olarak paylaşılmıştır, özel destek isterseniz ücretli verilecektir. insta=gokberkerenn. Ücretsiz danışmanlık için lütfen rahatsız etmeyin ‼️"

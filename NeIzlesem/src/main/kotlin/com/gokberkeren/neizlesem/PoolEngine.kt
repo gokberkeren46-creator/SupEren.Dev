@@ -168,27 +168,23 @@ class PoolEngine {
 
     fun openCandidate(activity: Activity, candidate: PickCandidate) {
         try {
-            AppUtils.loadSearchResult(activity, candidate.response, 0, null)
-        } catch (_: Throwable) {
-            try {
-                // Reflection fallback if signature differs across CloudStream versions
-                val m = AppUtils::class.java.methods.firstOrNull {
-                    it.name == "loadSearchResult" && it.parameterTypes.size >= 2 &&
-                        SearchResponse::class.java.isAssignableFrom(it.parameterTypes[1])
-                }
-                if (m != null) {
-                    val args = Array<Any?>(m.parameterTypes.size) { idx ->
-                        when (idx) {
-                            0 -> activity
-                            1 -> candidate.response
-                            2 -> 0
-                            else -> null
-                        }
-                    }
-                    m.invoke(AppUtils, *args)
-                }
-            } catch (_: Throwable) {
+            // Reflection handles Activity.loadSearchResult(...) across CloudStream versions
+            val m = AppUtils::class.java.methods.firstOrNull {
+                it.name == "loadSearchResult" && it.parameterTypes.size >= 2 &&
+                    SearchResponse::class.java.isAssignableFrom(it.parameterTypes[1])
             }
+            if (m != null) {
+                val args = Array<Any?>(m.parameterTypes.size) { idx ->
+                    when (idx) {
+                        0 -> activity
+                        1 -> candidate.response
+                        2 -> 0
+                        else -> null
+                    }
+                }
+                m.invoke(AppUtils, *args)
+            }
+        } catch (_: Throwable) {
         }
     }
 
@@ -353,8 +349,10 @@ class PoolEngine {
                 val v = (m.invoke(scoreObj, 10) as? Double)
                 if (v != null && v in 0.1..10.0) return v
             }
-            @Suppress("DEPRECATION")
-            val r = resp.rating
+            val ratingMethod = resp.javaClass.methods.firstOrNull {
+                it.name == "getRating" && it.parameterTypes.isEmpty()
+            }
+            val r = ratingMethod?.invoke(resp) as? Int
             if (r != null && r > 0) (r / 1000.0).coerceIn(0.1, 10.0) else null
         } catch (_: Throwable) {
             null
